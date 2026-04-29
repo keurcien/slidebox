@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "slidebox"
+description = "Declarative Google Slides generator — Prefab-style context managers for decks."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Slidebox Contributors" }]
+keywords = ["google-slides", "declarative", "presentations", "batchupdate"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business",
+]
+dynamic = ["version"]
+dependencies = [
+    "pydantic>=2.6",
+    "google-api-python-client>=2.100",
+    "google-auth>=2.23",
+    "google-auth-oauthlib>=1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.12",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+examples = [
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/keurcien/slidebox"
+Documentation = "https://github.com/keurcien/slidebox#readme"
+Issues = "https://github.com/keurcien/slidebox/issues"
+
+[tool.hatch.version]
+path = "src/slidebox/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/slidebox"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length — handled by formatter
+    "RUF001",  # em-dashes in strings
+    "RUF002",  # em-dashes in docstrings
+    "RUF003",  # em-dashes in comments
+    "RUF046",  # int(round(...)) is intentional
+    "N802",    # function names sometimes mirror Google API camelCase
+    "N803",    # API request kwargs mirror Google (presentationId, etc.)
+    "N812",    # `import ... as R` for request-builder brevity
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["F841", "B017", "B905", "SIM101", "SIM102", "N806", "N818"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "googleapiclient.*",
+    "google_auth_oauthlib.*",
+    "google.oauth2.*",
+    "google.auth.*",
+]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "live: requires real Google Slides API credentials (opt-in)",
+]
