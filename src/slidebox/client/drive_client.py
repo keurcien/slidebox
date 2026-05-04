@@ -35,6 +35,33 @@ class DriveClient:
         from googleapiclient.discovery import build
         self._service = build("drive", "v3", credentials=credentials, cache_discovery=False)
 
+    def create_presentation_file(
+        self,
+        title: str,
+        *,
+        parent_folder_id: str | None = None,
+    ) -> str:
+        """Create an empty Google Slides file via Drive and return its id.
+
+        Use this path on a service-account principal: `slides.presentations.create`
+        writes into the caller's My Drive root, which an SA does not own — many
+        Workspace policies surface that as a 403. Drive's `files.create` works,
+        and additionally lets us land the deck directly in `parent_folder_id`
+        instead of renaming/moving after the fact.
+        """
+        body: dict[str, Any] = {
+            "name": title,
+            "mimeType": "application/vnd.google-apps.presentation",
+        }
+        if parent_folder_id:
+            body["parents"] = [parent_folder_id]
+        file = retry_with_backoff(
+            lambda: self._service.files()
+            .create(body=body, fields="id", supportsAllDrives=True)
+            .execute()
+        )
+        return str(file["id"])
+
     def upload_image(
         self,
         data: bytes,

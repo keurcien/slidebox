@@ -11,7 +11,37 @@ from typing import Any
 
 import pytest
 
+from slidebox.client.drive_client import DriveClient
 from slidebox.client.slides_client import SlidesClient
+
+
+@dataclass
+class FakeDriveService:
+    created_files: list[dict[str, Any]] = field(default_factory=list)
+    next_id: int = 0
+
+    def files(self) -> FakeDriveFiles:
+        return FakeDriveFiles(self)
+
+
+@dataclass
+class FakeDriveFiles:
+    service: FakeDriveService
+
+    def create(
+        self,
+        *,
+        body: dict[str, Any],
+        fields: str | None = None,
+        supportsAllDrives: bool = False,
+        media_body: Any = None,
+    ) -> FakeExec:
+        fid = f"drive_{self.service.next_id}"
+        self.service.next_id += 1
+        self.service.created_files.append(
+            {"id": fid, "body": body, "supportsAllDrives": supportsAllDrives}
+        )
+        return FakeExec({"id": fid})
 
 
 @dataclass
@@ -59,3 +89,13 @@ def fake_service() -> FakeService:
 @pytest.fixture
 def fake_client(fake_service: FakeService) -> SlidesClient:
     return SlidesClient(credentials=None, _service=fake_service)
+
+
+@pytest.fixture
+def fake_drive_service() -> FakeDriveService:
+    return FakeDriveService()
+
+
+@pytest.fixture
+def fake_drive_client(fake_drive_service: FakeDriveService) -> DriveClient:
+    return DriveClient(credentials=None, _service=fake_drive_service)

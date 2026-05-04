@@ -11,6 +11,7 @@ ContextVar-based stacking so its children wire up correctly.
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
@@ -40,6 +41,14 @@ class Presentation(BaseModel):
 
     presentation_id: str | None = None
 
+    # When set, push() creates the deck via Drive (`files.create` with mimeType
+    # `application/vnd.google-apps.presentation`) and lands it in this folder.
+    # Required when authenticating as a service account, since Slides' own
+    # `presentations.create` writes to the caller's My Drive root and 403s
+    # under most Workspace policies for SAs. Falls back to the env var
+    # `SLIDEBOX_DRIVE_FOLDER_ID` if not set on the model.
+    drive_folder_id: str | None = None
+
     # Auth — exactly one of these paths is used. `credentials` wins;
     # otherwise resolve_credentials() walks the fallback chain.
     credentials: Any | None = Field(default=None, exclude=True, repr=False)
@@ -65,9 +74,12 @@ class Presentation(BaseModel):
         from slidebox.compile.compiler import Compiler
         from slidebox.layout.engine import LayoutEngine
 
+        folder_id = self.drive_folder_id or os.environ.get("SLIDEBOX_DRIVE_FOLDER_ID")
+        needs_drive = bool(folder_id) and self.presentation_id is None
+
         pending_images = self._collect_pending_images()
         creds: Any | None = None
-        if pending_images or client is None:
+        if pending_images or needs_drive or client is None:
             creds = resolve_credentials(
                 credentials=self.credentials,
                 service_account_file=self.service_account_file,
@@ -93,7 +105,14 @@ class Presentation(BaseModel):
             client = SlidesClient(creds)
 
         if self.presentation_id is None:
-            self.presentation_id = client.create_presentation(self.title)
+            if folder_id:
+                from slidebox.client.drive_client import DriveClient
+
+                self.presentation_id = DriveClient(creds).create_presentation_file(
+                    self.title, parent_folder_id=folder_id
+                )
+            else:
+                self.presentation_id = client.create_presentation(self.title)
 
         client.batch_update(self.presentation_id, plan.requests)
         return self.presentation_id

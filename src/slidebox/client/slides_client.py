@@ -15,6 +15,7 @@ from typing import Any
 
 from slidebox.client.batching import chunk_requests
 from slidebox.client.retry import retry_with_backoff
+from slidebox.errors import AuthError
 
 
 class SlidesClient:
@@ -31,9 +32,22 @@ class SlidesClient:
     # ── presentations ────────────────────────────────────────────────
     def create_presentation(self, title: str) -> str:
         body = {"title": title}
-        resp = retry_with_backoff(
-            lambda: self._service.presentations().create(body=body).execute()
-        )
+        try:
+            resp = retry_with_backoff(
+                lambda: self._service.presentations().create(body=body).execute()
+            )
+        except Exception as exc:
+            if _looks_like_sa_create_403(exc):
+                raise AuthError(
+                    "Slides' presentations.create() returned 403. This usually "
+                    "happens when authenticating as a service account: the call "
+                    "tries to write into the caller's My Drive root, which a "
+                    "service account does not own. Set Presentation."
+                    "drive_folder_id (or the SLIDEBOX_DRIVE_FOLDER_ID env var) "
+                    "to a Drive folder the SA can write to — slidebox will then "
+                    "create the deck via the Drive API instead."
+                ) from exc
+            raise
         return str(resp["presentationId"])
 
     def get_presentation(self, presentation_id: str) -> dict[str, Any]:
@@ -56,3 +70,17 @@ class SlidesClient:
             resp = retry_with_backoff(call)
             replies.extend(resp.get("replies") or [])
         return replies
+
+
+def _looks_like_sa_create_403(exc: BaseException) -> bool:
+    """Recognise the googleapiclient HttpError raised when an SA hits the
+    My-Drive-root restriction on `slides.presentations.create`. We can't
+    `isinstance` against HttpError without taking a hard import dep, so we
+    sniff the status code on the duck-typed `resp` attribute.
+    """
+    resp = getattr(exc, "resp", None)
+    status = getattr(resp, "status", None)
+    try:
+        return int(status) == 403
+    except (TypeError, ValueError):
+        return False
