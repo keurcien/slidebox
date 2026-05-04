@@ -89,7 +89,7 @@ class Presentation(BaseModel):
         if pending_images:
             from slidebox.client.drive_client import DriveClient
 
-            drive = DriveClient(creds)
+            drive = DriveClient(creds, parent_folder_id=folder_id)
             for img in pending_images:
                 url = drive.upload_image(
                     img.pending_bytes,  # type: ignore[arg-type]
@@ -108,9 +108,9 @@ class Presentation(BaseModel):
             if folder_id:
                 from slidebox.client.drive_client import DriveClient
 
-                self.presentation_id = DriveClient(creds).create_presentation_file(
-                    self.title, parent_folder_id=folder_id
-                )
+                self.presentation_id = DriveClient(
+                    creds, parent_folder_id=folder_id
+                ).create_presentation_file(self.title)
             else:
                 self.presentation_id = client.create_presentation(self.title)
 

@@ -56,14 +56,17 @@ def test_kpi_dashboard_end_to_end(fake_service, fake_client) -> None:
 
 
 def test_push_uses_drive_create_when_folder_id_set(
-    fake_service, fake_client, fake_drive_service, fake_drive_client, monkeypatch
+    fake_service, fake_client, fake_drive_service, monkeypatch
 ) -> None:
     """drive_folder_id routes creation through Drive.files.create instead of
     Slides.presentations.create — the path SAs need under most Workspace policies."""
     from slidebox.client import drive_client as drive_module
+    from slidebox.client.drive_client import DriveClient
 
     monkeypatch.setattr(
-        drive_module, "DriveClient", lambda *a, **kw: fake_drive_client
+        drive_module,
+        "DriveClient",
+        lambda creds, **kw: DriveClient(creds, _service=fake_drive_service, **kw),
     )
 
     with Presentation(
@@ -90,12 +93,15 @@ def test_push_uses_drive_create_when_folder_id_set(
 
 
 def test_push_picks_up_drive_folder_env_var(
-    fake_service, fake_client, fake_drive_service, fake_drive_client, monkeypatch
+    fake_service, fake_client, fake_drive_service, monkeypatch
 ) -> None:
     from slidebox.client import drive_client as drive_module
+    from slidebox.client.drive_client import DriveClient
 
     monkeypatch.setattr(
-        drive_module, "DriveClient", lambda *a, **kw: fake_drive_client
+        drive_module,
+        "DriveClient",
+        lambda creds, **kw: DriveClient(creds, _service=fake_drive_service, **kw),
     )
     monkeypatch.setenv("SLIDEBOX_DRIVE_FOLDER_ID", "folder_from_env")
 

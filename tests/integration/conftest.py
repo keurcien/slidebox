@@ -18,10 +18,20 @@ from slidebox.client.slides_client import SlidesClient
 @dataclass
 class FakeDriveService:
     created_files: list[dict[str, Any]] = field(default_factory=list)
+    list_calls: list[dict[str, Any]] = field(default_factory=list)
+    permission_calls: list[dict[str, Any]] = field(default_factory=list)
+    get_calls: list[dict[str, Any]] = field(default_factory=list)
+    # Stub: maps parent folder id → driveId returned by files.get
+    drive_id_for_parent: dict[str, str] = field(default_factory=dict)
+    # Stub: list of (digest, file_id) hits returned in order
+    cached_hashes: dict[str, str] = field(default_factory=dict)
     next_id: int = 0
 
     def files(self) -> FakeDriveFiles:
         return FakeDriveFiles(self)
+
+    def permissions(self) -> FakeDrivePermissions:
+        return FakeDrivePermissions(self)
 
 
 @dataclass
@@ -39,9 +49,61 @@ class FakeDriveFiles:
         fid = f"drive_{self.service.next_id}"
         self.service.next_id += 1
         self.service.created_files.append(
-            {"id": fid, "body": body, "supportsAllDrives": supportsAllDrives}
+            {
+                "id": fid,
+                "body": body,
+                "supportsAllDrives": supportsAllDrives,
+                "has_media": media_body is not None,
+            }
         )
         return FakeExec({"id": fid})
+
+    def list(self, **kwargs: Any) -> FakeExec:
+        self.service.list_calls.append(kwargs)
+        # Crude digest extraction from the q string for cache hits in tests.
+        q = kwargs.get("q", "")
+        for digest, fid in self.service.cached_hashes.items():
+            if digest in q:
+                return FakeExec({"files": [{"id": fid}]})
+        return FakeExec({"files": []})
+
+    def get(
+        self,
+        *,
+        fileId: str,
+        fields: str | None = None,
+        supportsAllDrives: bool = False,
+    ) -> FakeExec:
+        self.service.get_calls.append(
+            {"fileId": fileId, "fields": fields, "supportsAllDrives": supportsAllDrives}
+        )
+        drive_id = self.service.drive_id_for_parent.get(fileId)
+        out: dict[str, Any] = {}
+        if drive_id is not None:
+            out["driveId"] = drive_id
+        return FakeExec(out)
+
+
+@dataclass
+class FakeDrivePermissions:
+    service: FakeDriveService
+
+    def create(
+        self,
+        *,
+        fileId: str,
+        body: dict[str, Any],
+        fields: str | None = None,
+        supportsAllDrives: bool = False,
+    ) -> FakeExec:
+        self.service.permission_calls.append(
+            {
+                "fileId": fileId,
+                "body": body,
+                "supportsAllDrives": supportsAllDrives,
+            }
+        )
+        return FakeExec({"id": "perm_1"})
 
 
 @dataclass
