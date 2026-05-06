@@ -3,10 +3,12 @@
 `resolve_credentials` walks this priority chain:
 
     1. `credentials` kwarg (already-built google-auth Credentials)
-    2. `service_account_file` (path to a SA JSON key)
-    3. `oauth_client_secrets` (path to an OAuth client-secrets JSON;
+    2. `access_token` (raw OAuth access token, optionally with refresh
+       material for auto-refresh)
+    3. `service_account_file` (path to a SA JSON key)
+    4. `oauth_client_secrets` (path to an OAuth client-secrets JSON;
        runs the installed-app flow on a local port)
-    4. Application Default Credentials (`gcloud auth application-default`,
+    5. Application Default Credentials (`gcloud auth application-default`,
        GCE metadata service, Cloud Run, etc.)
 
 This hybrid approach matches the user's chosen "managed + pass-through"
@@ -32,6 +34,11 @@ DEFAULT_SCOPES: tuple[str, ...] = (
 def resolve_credentials(
     *,
     credentials: Any | None = None,
+    access_token: str | None = None,
+    refresh_token: str | None = None,
+    token_uri: str | None = None,
+    client_id: str | None = None,
+    client_secret: str | None = None,
     service_account_file: str | None = None,
     oauth_client_secrets: str | None = None,
     scopes: tuple[str, ...] = DEFAULT_SCOPES,
@@ -39,6 +46,20 @@ def resolve_credentials(
     """Return a Google-auth Credentials object ready for the API client."""
     if credentials is not None:
         return credentials
+
+    if access_token is not None:
+        try:
+            from google.oauth2.credentials import Credentials as UserCredentials
+        except ImportError as exc:  # pragma: no cover
+            raise AuthError("google-auth is required for OAuth token auth") from exc
+        return UserCredentials(  # type: ignore[no-untyped-call]
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri=token_uri or "https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=list(scopes),
+        )
 
     if service_account_file is not None:
         try:
@@ -70,5 +91,6 @@ def resolve_credentials(
     except Exception as exc:  # pragma: no cover - environment-specific
         raise AuthError(
             "Could not resolve credentials. Pass `credentials=`, "
-            "`service_account_file=`, `oauth_client_secrets=`, or set up ADC."
+            "`access_token=`, `service_account_file=`, "
+            "`oauth_client_secrets=`, or set up ADC."
         ) from exc

@@ -52,6 +52,11 @@ class Presentation(BaseModel):
     # Auth — exactly one of these paths is used. `credentials` wins;
     # otherwise resolve_credentials() walks the fallback chain.
     credentials: Any | None = Field(default=None, exclude=True, repr=False)
+    access_token: str | None = Field(default=None, exclude=True, repr=False)
+    refresh_token: str | None = Field(default=None, exclude=True, repr=False)
+    token_uri: str | None = Field(default=None, exclude=True, repr=False)
+    client_id: str | None = Field(default=None, exclude=True, repr=False)
+    client_secret: str | None = Field(default=None, exclude=True, repr=False)
     service_account_file: str | None = None
     oauth_client_secrets: str | None = None
 
@@ -82,6 +87,11 @@ class Presentation(BaseModel):
         if pending_images or needs_drive or client is None:
             creds = resolve_credentials(
                 credentials=self.credentials,
+                access_token=self.access_token,
+                refresh_token=self.refresh_token,
+                token_uri=self.token_uri,
+                client_id=self.client_id,
+                client_secret=self.client_secret,
                 service_account_file=self.service_account_file,
                 oauth_client_secrets=self.oauth_client_secrets,
             )

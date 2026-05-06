@@ -34,7 +34,7 @@ pip install slidebox
 
 ## Auth
 
-Slidebox accepts any `google.oauth2.Credentials` object, a service-account JSON path, an OAuth client-secrets file, or falls back to Application Default Credentials.
+Slidebox accepts any `google.oauth2.Credentials` object, a raw OAuth access token, a service-account JSON path, an OAuth client-secrets file, or falls back to Application Default Credentials.
 
 ```python
 # Explicit service account
@@ -42,6 +42,10 @@ Presentation(title="...", service_account_file="sa.json")
 
 # Pre-built credentials
 Presentation(title="...", credentials=my_creds)
+
+# Raw OAuth access token (e.g. when the host already brokered the flow)
+Presentation(title="...", access_token=tok)
+# Optionally add refresh_token / client_id / client_secret for auto-refresh
 
 # Application default credentials (GCE, Cloud Run, gcloud auth)
 Presentation(title="...")

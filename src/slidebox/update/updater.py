@@ -39,6 +39,11 @@ class Updater:
         presentation_id: str,
         *,
         credentials: Any | None = None,
+        access_token: str | None = None,
+        refresh_token: str | None = None,
+        token_uri: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         service_account_file: str | None = None,
         oauth_client_secrets: str | None = None,
         client: SlidesClient | None = None,
@@ -47,6 +52,11 @@ class Updater:
         self._buffer: list[dict[str, Any] | _DeferredReq] = []
         self._client = client
         self._credentials = credentials
+        self._access_token = access_token
+        self._refresh_token = refresh_token
+        self._token_uri = token_uri
+        self._client_id = client_id
+        self._client_secret = client_secret
         self._sa_file = service_account_file
         self._oauth_secrets = oauth_client_secrets
 
@@ -161,6 +171,11 @@ class Updater:
 
         creds = resolve_credentials(
             credentials=self._credentials,
+            access_token=self._access_token,
+            refresh_token=self._refresh_token,
+            token_uri=self._token_uri,
+            client_id=self._client_id,
+            client_secret=self._client_secret,
             service_account_file=self._sa_file,
             oauth_client_secrets=self._oauth_secrets,
         )
