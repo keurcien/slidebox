@@ -1,29 +1,33 @@
 # slidebox
 
-Declarative Google Slides generator. Write decks with context managers, push to Google, patch later without rebuilding.
+Grid-based, on-brand decks from Python. A declarative, LLM-friendly
+builder compiles a typed deck to **PowerPoint (.pptx)** via python-pptx,
+and converts to **native Google Slides** on upload to Drive.
 
 ```python
-from slidebox import Presentation, Slide, Row, Title, Kpi
+from slidebox import Deck, save, to_google_slides
 
-with Presentation(title="Q1 KPIs") as deck:
-    with Slide():
-        Title("Q1 Performance")
-        with Row(gap=16):
-            Kpi("Revenue",   "$4.2M", trend="+12%", id="k_rev")
-            Kpi("Users",     "58K",   trend="+8%",  id="k_users")
-            Kpi("Retention", "94%",   trend="+2%",  id="k_ret")
+deck = (
+    Deck.new(title="Q1 KPIs")
+    .slide(bg="beige")
+        .header("A quiet quarter.", size="display", col=1, row=2, span=(10, 2))
+        .kpi(label="Revenue",   value="4,2", unit="M€", delta="+12%",
+             delta_dir="up", size="md", col=1, row=5, span=(4, 3), object_id="k_rev")
+        .kpi(label="Users",     value="58",  unit="K",  delta="+8%",
+             delta_dir="up", size="md", col=5, row=5, span=(4, 3), object_id="k_users")
+        .kpi(label="Retention", value="94",  unit="%",  delta="+2 pts",
+             delta_dir="up", size="md", col=9, row=5, span=(4, 3), object_id="k_ret")
+).build()
 
-deck.push()                                    # creates the deck
+save(deck, "q1.pptx")                       # local PowerPoint
+g = to_google_slides(deck, name="Q1 KPIs")  # native Google Slides on Drive
+print(g.url)
 ```
 
-Later, patch a single value without rebuilding:
+Refresh the same deck next quarter — same URL, only the numbers change:
 
 ```python
-from slidebox import Updater
-
-Updater(deck.presentation_id) \
-    .replace_text("k_rev", "$4.8M") \
-    .apply()
+to_google_slides(build_with_fresh_data(), file_id=g.id)   # updates in place
 ```
 
 ## Install
@@ -32,31 +36,48 @@ Updater(deck.presentation_id) \
 pip install slidebox
 ```
 
+Pulls `python-pptx` (rendering) and `google-api-python-client` + `google-auth`
+(Drive upload).
+
+## How it works
+
+- **Builder** — chain `.slide()` and card methods: `header`, `subtitle`,
+  `eyebrow`, `body`, `kpi`, `image`, `logo`. `col` / `row` / `span` place
+  each card on a 12 × 8 grid. Card type drives typography and colour — you
+  never set fonts or sizes.
+- **Schema** — the builder produces a typed, validated Pydantic `Deck`
+  (the source of truth): no overlapping cards, no out-of-bounds spans,
+  no duplicate ids.
+- **Render** — `render(deck)` draws the deck into an in-memory
+  `pptx.Presentation`, sizing text to fit each box. `save()` writes a
+  `.pptx`; `to_google_slides()` uploads (in memory, no temp file) and
+  converts to Google Slides.
+- **Charts** — embed matplotlib (or any) figures as images via
+  `image(source_url=…)`. See `examples/kpi_report.py`.
+
+The runnable example is **`examples/kpi_report.py`** — a 6-slide weekly
+report with KPI cards and matplotlib charts on fake data.
+
 ## Auth
 
-Slidebox accepts any `google.oauth2.Credentials` object, a raw OAuth access token, a service-account JSON path, an OAuth client-secrets file, or falls back to Application Default Credentials.
+`to_google_slides()` uses Application Default Credentials by default:
 
-```python
-# Explicit service account
-Presentation(title="...", service_account_file="sa.json")
-
-# Pre-built credentials
-Presentation(title="...", credentials=my_creds)
-
-# Raw OAuth access token (e.g. when the host already brokered the flow)
-Presentation(title="...", access_token=tok)
-# Optionally add refresh_token / client_id / client_secret for auto-refresh
-
-# Application default credentials (GCE, Cloud Run, gcloud auth)
-Presentation(title="...")
+```bash
+gcloud auth application-default login \
+    --scopes=https://www.googleapis.com/auth/drive
 ```
+
+A `CredentialsProvider` protocol lets an OAuth web app supply a token.
 
 ## Why slidebox
 
-- **Token-efficient authoring** — short component names, sensible defaults, LLM-friendly.
-- **Customisable** — themes, `raw=` escape hatch on every component, subclass to extend.
-- **Editable decks** — deterministic object IDs mean the same script can patch a live presentation.
-- **One batchUpdate** — atomic creation; no half-built decks.
+- **LLM-friendly authoring** — short, declarative builder; sensible
+  defaults; a fixed card vocabulary.
+- **On-brand by construction** — themes map every colour and font; card
+  type owns typography, and text auto-fits its box (`fit_report` verifies).
+- **Two outputs, one deck** — offline `.pptx` or native Google Slides.
+- **Refreshable** — deterministic render + update-in-place keeps a deck
+  at one stable link, quarter after quarter.
 
 ## Status
 

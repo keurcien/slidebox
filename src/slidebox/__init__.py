@@ -1,83 +1,84 @@
-"""slidebox — declarative Google Slides generator.
+"""slidebox — grid-based slide library for Choose.
 
-    from slidebox import Presentation, Slide, Title, Text
+Build standardised, on-brand decks from Python with a declarative,
+LLM-friendly builder. Decks render to PowerPoint (.pptx) via python-pptx,
+and convert to native Google Slides on upload to Drive.
 
-    with Presentation(title="Hello") as deck:
-        with Slide():
-            Title("Hello world")
-            Text("A tiny deck.")
+    from slidebox import Deck, save, to_google_slides
 
-    deck.push()
+    deck = (
+        Deck.new(title="Revue hebdomadaire")
+        .slide(bg="beige")
+        .header("L'activité de la semaine.", size="h1", col=1, row=2, span=(10, 1))
+        .kpi(label="GMV", value="5,1", unit="M€", delta="+16%", delta_dir="up",
+             size="md", col=1, row=4, span=(3, 4))
+    ).build()
+
+    save(deck, "report.pptx")                 # local .pptx
+    g = to_google_slides(deck, name="Report") # -> Google Slides on Drive
+    print(g.url)
 """
 
 from __future__ import annotations
 
 from slidebox._version import __version__
-from slidebox.components.image import Image
-from slidebox.components.kpi import Kpi
-from slidebox.components.kpi_grid import KpiGrid
-from slidebox.components.layout import Col, Grid, Row, Spacer
-from slidebox.components.shape import Shape, ShapeType
-from slidebox.components.slide import Slide
-from slidebox.components.text import Heading, Subtitle, Text, Title
-from slidebox.context import defer, insert
-from slidebox.errors import (
-    AuthError,
-    CompileError,
-    LayoutError,
-    QuotaExceededError,
-    SlideboxError,
-    StaleStateError,
-    ValidationError,
+from slidebox.builder import (
+    DeckBuilder,
+    SlideBuilder,
+    card_object_id,
+    slide_object_id,
 )
-from slidebox.geometry import Bounds
-from slidebox.presentation import Presentation
-from slidebox.theme import KpiTheme, TextStyleDef, Theme, themes
-from slidebox.units import emu, inches, percent, pt, px
+from slidebox.drive import (
+    CredentialsProvider,
+    GoogleSlides,
+    save,
+    to_google_slides,
+)
+from slidebox.fit import Overflow, fit_report, missing_families
+from slidebox.render import render
+from slidebox.schema import (
+    Background,
+    BodyCard,
+    Card,
+    CellSpan,
+    Deck,
+    EyebrowCard,
+    HeaderCard,
+    ImageCard,
+    KpiCard,
+    LogoCard,
+    Slide,
+    SubtitleCard,
+)
+from slidebox.theme import BrandTheme
+from slidebox.types import RGB
 
 __all__ = [
-    "AuthError",
-    "Bounds",
-    "Col",
-    "CompileError",
-    "Grid",
-    "Heading",
-    "Image",
-    "Kpi",
-    "KpiGrid",
-    "KpiTheme",
-    "LayoutError",
-    "Presentation",
-    "QuotaExceededError",
-    "Row",
-    "Shape",
-    "ShapeType",
+    "RGB",
+    "Background",
+    "BodyCard",
+    "BrandTheme",
+    "Card",
+    "CellSpan",
+    "CredentialsProvider",
+    "Deck",
+    "DeckBuilder",
+    "EyebrowCard",
+    "GoogleSlides",
+    "HeaderCard",
+    "ImageCard",
+    "KpiCard",
+    "LogoCard",
+    "Overflow",
     "Slide",
-    "SlideboxError",
-    "Spacer",
-    "StaleStateError",
-    "Subtitle",
-    "Text",
-    "TextStyleDef",
-    "Theme",
-    "Title",
-    "ValidationError",
+    "SlideBuilder",
+    "SubtitleCard",
     "__version__",
-    "defer",
-    "emu",
-    "inches",
-    "insert",
-    "percent",
-    "pt",
-    "px",
-    "themes",
+    "card_object_id",
+    "fit_report",
+    "missing_families",
+    "render",
+    "save",
+    "slide_object_id",
+    "to_google_slides",
 ]
-
-
-def __getattr__(name: str) -> object:
-    """Lazily expose `Updater` without forcing client imports at package load."""
-    if name == "Updater":
-        from slidebox.update.updater import Updater
-
-        return Updater
-    raise AttributeError(f"module 'slidebox' has no attribute {name!r}")
