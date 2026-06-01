@@ -100,6 +100,14 @@ def to_google_slides(
 
     Pass `file_id` to update an existing deck in place (stable URL).
     Otherwise a new file is created, optionally inside `folder_id`.
+
+    `folder_id` may be a folder in a **Shared Drive** (or a Shared Drive's
+    id). This is required for service accounts: a service account has no
+    My Drive storage quota, so creating at the drive root fails with
+    "Service Accounts do not have storage quota". Targeting a Shared Drive
+    folder makes the Shared Drive own the file, which works. Shared-Drive
+    calls are already enabled (`supportsAllDrives=True`).
+
     Pass `fonts` to size text from real font metrics (see `slidebox.render`).
     """
     from googleapiclient.discovery import build

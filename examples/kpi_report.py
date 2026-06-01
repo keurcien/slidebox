@@ -240,6 +240,11 @@ def main() -> None:
     ap.add_argument("--output", default="/tmp/kpi_report.pptx")
     ap.add_argument("--upload", action="store_true",
                     help="Upload to Drive as Google Slides.")
+    ap.add_argument("--folder", default=None,
+                    help="Drive folder id to create in (use a Shared Drive "
+                         "folder for service accounts).")
+    ap.add_argument("--file-id", default=None,
+                    help="Update an existing Google Slides file in place.")
     ap.add_argument("--check", action="store_true",
                     help="Report any text that overflows its box.")
     ap.add_argument("--name", default="Revue hebdomadaire — Choose")
@@ -269,7 +274,8 @@ def main() -> None:
     print(f"charts in {chart_dir}")
 
     if args.upload:
-        g = to_google_slides(deck, name=args.name, fonts=fonts)
+        g = to_google_slides(deck, name=args.name, fonts=fonts,
+                             folder_id=args.folder, file_id=args.file_id)
         print(g.url)
 
 
