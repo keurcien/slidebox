@@ -23,6 +23,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     "pydantic>=2.6",
+    "python-pptx>=1.0",
     "google-api-python-client>=2.100",
     "google-auth>=2.23",
     "google-auth-oauthlib>=1.1",
@@ -36,13 +37,8 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
 ]
-docs = [
-    "mkdocs-material>=9.5",
-    "mkdocstrings[python]>=0.25",
-]
 examples = [
-    "matplotlib>=3.8",
-    "seaborn>=0.13",
+    "matplotlib>=3.8",   # only for examples that embed charts as images
 ]
 
 [project.urls]
@@ -91,6 +87,13 @@ module = [
 ]
 ignore_missing_imports = true
 follow_untyped_imports = true
+
+# python-pptx ships py.typed but with incomplete annotations; skip it so
+# mypy treats it as Any instead of flagging every call as no-untyped-call.
+[[tool.mypy.overrides]]
+module = ["pptx.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

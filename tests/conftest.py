@@ -4,23 +4,54 @@ from __future__ import annotations
 
 import pytest
 
-from slidebox import Col, Kpi, Presentation, Row, Slide, Text, Title
+from slidebox import Deck
 
 
 @pytest.fixture
-def hello_deck() -> Presentation:
-    with Presentation(title="Hello") as deck, Slide(id="slide_hello"):
-        Title("Hello world", id="text_title")
-        Text("A tiny deck", id="text_body")
-    return deck
+def hello_deck() -> Deck:
+    db = (
+        Deck.new(title="Hello", object_id="hello")
+        .slide(bg="white", label="cover", object_id="cover")
+        .header("Hello, slidebox.", col=1, row=3, span=(10, 3), object_id="cover_title")
+        .subtitle(
+            "A grid-based deck library.",
+            col=1,
+            row=6,
+            span=(8, 1),
+            object_id="cover_sub",
+        )
+    )
+    return db.build()
 
 
 @pytest.fixture
-def kpi_deck() -> Presentation:
-    with Presentation(title="KPIs") as deck, Slide(id="slide_kpis"), Col(gap=24, padding=48):
-        Title("Q1 KPIs", id="text_q1")
-        with Row(gap=16):
-            Kpi("Revenue", "$4.2M", trend="+12%", id="k_rev")
-            Kpi("Users", "58K", trend="+8%", id="k_users")
-            Kpi("Retention", "94%", trend="+2%", id="k_ret")
-    return deck
+def kpi_deck() -> Deck:
+    db = (
+        Deck.new(title="Q1 KPIs", object_id="q1")
+        .slide(bg="beige", label="kpis")
+        .header("Q1 results.", size="display", col=1, row=2, span=(10, 2))
+        .kpi(
+            label="Revenue",
+            value="4,2",
+            unit="M€",
+            delta="+12%",
+            delta_dir="up",
+            size="lg",
+            col=1,
+            row=4,
+            span=(4, 4),
+            object_id="kpi_rev",
+        )
+        .kpi(
+            label="Users",
+            value="58",
+            unit="K",
+            delta="+8%",
+            delta_dir="up",
+            col=5,
+            row=4,
+            span=(4, 4),
+            object_id="kpi_users",
+        )
+    )
+    return db.build()
