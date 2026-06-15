@@ -7,8 +7,10 @@ from pydantic import ValidationError
 
 from slidebox import Deck
 from slidebox.schema import (
+    AbsoluteBox,
     HeaderCard,
     KpiCard,
+    PanelCard,
     Slide,
 )
 
@@ -114,3 +116,37 @@ def test_to_json_canonical_is_idempotent(hello_deck: Deck) -> None:
     bg = a.index('"background"')
     next_oid = a.index('"object_id"', bg)
     assert bg < next_oid
+
+
+def test_panel_grid_overlap_allowed() -> None:
+    # A panel may sit beneath (overlap) content cards.
+    Slide(
+        object_id="s",
+        cards=[
+            PanelCard(object_id="bg", col_start=1, col_span=6,
+                      row_start=1, row_span=8, tone="beige"),
+            HeaderCard(object_id="h", col_start=1, col_span=5,
+                       row_start=1, row_span=2, text="A"),
+        ],
+    )
+
+
+def test_panel_absolute_box_skips_grid_bounds() -> None:
+    # Absolute panels carry no grid cells and may exceed the grid extent.
+    s = Slide(
+        object_id="s",
+        cards=[PanelCard(object_id="bg", bbox=AbsoluteBox(
+            x=0, y=0, w=4131600, h=5143500), tone="beige")],
+    )
+    assert s.cards[0].bbox.w == 4131600
+
+
+def test_panel_both_placements_rejected() -> None:
+    with pytest.raises(ValidationError):
+        PanelCard(object_id="bg", col_start=1, col_span=2, row_start=1,
+                  row_span=2, bbox=AbsoluteBox(x=0, y=0, w=10, h=10))
+
+
+def test_panel_no_placement_rejected() -> None:
+    with pytest.raises(ValidationError):
+        PanelCard(object_id="bg", tone="beige")
