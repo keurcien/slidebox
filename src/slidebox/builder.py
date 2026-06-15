@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from slidebox.grid import GridRes
 from slidebox.schema import (
+    AbsoluteBox,
     Background,
     BodyCard,
     Card,
@@ -19,8 +20,11 @@ from slidebox.schema import (
     ImageCard,
     KpiCard,
     LogoCard,
+    PanelCard,
     Slide,
     SubtitleCard,
+    TableCard,
+    TableCell,
 )
 
 
@@ -28,6 +32,30 @@ def _normalize_span(span: int | tuple[int, int]) -> tuple[int, int]:
     if isinstance(span, int):
         return (span, 1)
     return span
+
+
+def _placement(
+    col: int | None,
+    row: int | None,
+    span: int | tuple[int, int] | None,
+    x: int | None,
+    y: int | None,
+    w: int | None,
+    h: int | None,
+) -> dict:
+    """Return card-constructor kwargs for grid *or* absolute placement.
+
+    Pass grid args (col, row, span) or absolute EMU (x, y, w, h) — not both.
+    """
+    abs_args = (x, y, w, h)
+    if any(v is not None for v in abs_args):
+        if any(v is None for v in abs_args):
+            raise ValueError("absolute placement needs all of x, y, w, h")
+        return {"bbox": AbsoluteBox(x=x, y=y, w=w, h=h)}
+    if col is None or row is None or span is None:
+        raise ValueError("provide grid args (col, row, span) or absolute (x, y, w, h)")
+    cs, rs = _normalize_span(span)
+    return {"col_start": col, "col_span": cs, "row_start": row, "row_span": rs}
 
 
 def slide_object_id(deck_id: str, ordinal: int) -> str:
@@ -72,22 +100,28 @@ class SlideBuilder:
         self,
         text: str,
         *,
-        col: int,
-        row: int,
-        span: int | tuple[int, int],
+        col: int | None = None,
+        row: int | None = None,
+        span: int | tuple[int, int] | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        w: int | None = None,
+        h: int | None = None,
         size: str = "h1",
+        size_pt: float | None = None,
+        color: str | None = None,
+        align: str = "left",
         object_id: str | None = None,
     ) -> SlideBuilder:
-        cs, rs = _normalize_span(span)
         return self._add(
             HeaderCard(
                 object_id=self._next_id("header", object_id),
-                col_start=col,
-                col_span=cs,
-                row_start=row,
-                row_span=rs,
                 text=text,
                 size=size,
+                size_pt=size_pt,
+                color=color,
+                align=align,
+                **_placement(col, row, span, x, y, w, h),
             )
         )
 
@@ -116,20 +150,28 @@ class SlideBuilder:
         self,
         text: str,
         *,
-        col: int,
-        row: int,
-        span: int | tuple[int, int],
+        col: int | None = None,
+        row: int | None = None,
+        span: int | tuple[int, int] | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        w: int | None = None,
+        h: int | None = None,
+        variant: str = "serif",
+        size_pt: float | None = None,
+        color: str | None = None,
+        align: str = "left",
         object_id: str | None = None,
     ) -> SlideBuilder:
-        cs, rs = _normalize_span(span)
         return self._add(
             EyebrowCard(
                 object_id=self._next_id("eyebrow", object_id),
-                col_start=col,
-                col_span=cs,
-                row_start=row,
-                row_span=rs,
                 text=text,
+                variant=variant,
+                size_pt=size_pt,
+                color=color,
+                align=align,
+                **_placement(col, row, span, x, y, w, h),
             )
         )
 
@@ -137,22 +179,32 @@ class SlideBuilder:
         self,
         paragraphs: list[str] | str,
         *,
-        col: int,
-        row: int,
-        span: int | tuple[int, int],
+        col: int | None = None,
+        row: int | None = None,
+        span: int | tuple[int, int] | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        w: int | None = None,
+        h: int | None = None,
+        tone: str = "default",
+        size_pt: float | None = None,
+        strong: list[int] | None = None,
+        color: str | None = None,
+        align: str = "left",
         object_id: str | None = None,
     ) -> SlideBuilder:
-        cs, rs = _normalize_span(span)
         if isinstance(paragraphs, str):
             paragraphs = [paragraphs]
         return self._add(
             BodyCard(
                 object_id=self._next_id("body", object_id),
-                col_start=col,
-                col_span=cs,
-                row_start=row,
-                row_span=rs,
                 paragraphs=paragraphs,
+                tone=tone,
+                size_pt=size_pt,
+                strong=strong or [],
+                color=color,
+                align=align,
+                **_placement(col, row, span, x, y, w, h),
             )
         )
 
@@ -190,29 +242,111 @@ class SlideBuilder:
     def image(
         self,
         *,
-        col: int,
-        row: int,
-        span: int | tuple[int, int],
+        col: int | None = None,
+        row: int | None = None,
+        span: int | tuple[int, int] | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        w: int | None = None,
+        h: int | None = None,
         source_url: str | None = None,
         drive_file_id: str | None = None,
         placeholder_tone: str | None = None,
         rounded: bool = False,
         caption: str | None = None,
+        outline: str | None = None,
+        outline_pt: float = 1.0,
+        rotation: float = 0.0,
         object_id: str | None = None,
     ) -> SlideBuilder:
-        cs, rs = _normalize_span(span)
         return self._add(
             ImageCard(
                 object_id=self._next_id("image", object_id),
-                col_start=col,
-                col_span=cs,
-                row_start=row,
-                row_span=rs,
                 source_url=source_url,
                 drive_file_id=drive_file_id,
                 placeholder_tone=placeholder_tone,
                 rounded=rounded,
                 caption=caption,
+                outline=outline,
+                outline_pt=outline_pt,
+                rotation=rotation,
+                **_placement(col, row, span, x, y, w, h),
+            )
+        )
+
+    def panel(
+        self,
+        *,
+        col: int | None = None,
+        row: int | None = None,
+        span: int | tuple[int, int] | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        w: int | None = None,
+        h: int | None = None,
+        shape: str = "rectangle",
+        tone: str = "beige",
+        fill: str | None = None,
+        rounded: bool = False,
+        outline: str | None = None,
+        outline_pt: float = 1.0,
+        rotation: float = 0.0,
+        object_id: str | None = None,
+    ) -> SlideBuilder:
+        """A background shape, placed on the grid or by absolute EMU.
+
+        Grid:     `panel(col=1, row=1, span=(6, 8))`
+        Absolute: `panel(x=0, y=0, w=4131600, h=5143500)`  # bleeds to edges
+
+        Absolute `x/y/w/h` are EMU (python-pptx units; `Inches`/`Emu`/`Pt`
+        all work). Pass grid args *or* absolute args, not both. `shape` is
+        "rectangle" (default), "ellipse", or "triangle"; the fill is a brand
+        `tone` by default, or pass `fill`/`outline` as exact "#RRGGBB" colors.
+        """
+        return self._add(
+            PanelCard(
+                object_id=self._next_id("panel", object_id),
+                shape=shape, tone=tone, fill=fill, rounded=rounded,
+                outline=outline, outline_pt=outline_pt, rotation=rotation,
+                **_placement(col, row, span, x, y, w, h),
+            )
+        )
+
+    def table(
+        self,
+        cells: list[list[TableCell]],
+        *,
+        x: int | None = None,
+        y: int | None = None,
+        w: int | None = None,
+        h: int | None = None,
+        col: int | None = None,
+        row: int | None = None,
+        span: int | tuple[int, int] | None = None,
+        col_widths: list[int] | None = None,
+        row_heights: list[int] | None = None,
+        font: str | None = None,
+        border: str | None = None,
+        border_pt: float = 1.0,
+        object_id: str | None = None,
+    ) -> SlideBuilder:
+        """A native table. Place by absolute EMU (x, y) — its width/height
+        come from `col_widths`/`row_heights` if not given — or on the grid."""
+        if x is not None and y is not None and w is None and h is None:
+            if col_widths is not None:
+                w = sum(col_widths)
+            if row_heights is not None:
+                h = sum(row_heights)
+        return self._add(
+            TableCard(
+                object_id=self._next_id("table", object_id),
+                cells=cells,
+                col_widths=col_widths,
+                row_heights=row_heights,
+                font=font,
+                border=border,
+                border_pt=border_pt,
+                **_placement(col, row, span, x, y, w, h),
             )
         )
 

@@ -7,7 +7,12 @@ in the brand palette and embedded as images.
     uv pip install matplotlib                 # one-time
     uv run examples/kpi_report.py             # -> /tmp/kpi_report.pptx
     uv run examples/kpi_report.py --check     # verify no text overflows
-    uv run examples/kpi_report.py --upload    # -> Google Slides on Drive
+    uv run examples/kpi_report.py --upload    # -> Google Slides in the Shared Drive
+
+`--upload` creates the deck in the Shared Drive `SHARED_DRIVE_FOLDER` below
+(override with `--folder <id>`). It uses environment ADC, so on a server
+that's your service account — a Shared Drive target is required because a
+service account has no My Drive storage quota.
 
 Charts are rendered to PNGs sized to their exact grid cells (so they don't
 distort) and placed with `image(source_url=…)`. Swap the fake data in
@@ -22,6 +27,10 @@ from pathlib import Path
 
 from slidebox import BrandTheme, Deck, fit_report, save, to_google_slides
 from slidebox.grid import cell_to_emu
+
+# Shared Drive folder to upload into (a service account has no My Drive
+# quota, so a Shared Drive target is required). Override with --folder.
+SHARED_DRIVE_FOLDER = "0AC8A2SteA2ZOUk9PVA"
 
 # ── Theme palette (hex, from BrandTheme) ─────────────────────────────
 _T = BrandTheme()
@@ -240,9 +249,9 @@ def main() -> None:
     ap.add_argument("--output", default="/tmp/kpi_report.pptx")
     ap.add_argument("--upload", action="store_true",
                     help="Upload to Drive as Google Slides.")
-    ap.add_argument("--folder", default=None,
-                    help="Drive folder id to create in (use a Shared Drive "
-                         "folder for service accounts).")
+    ap.add_argument("--folder", default=SHARED_DRIVE_FOLDER,
+                    help="Drive folder / Shared Drive id to create in "
+                         "(default: SHARED_DRIVE_FOLDER).")
     ap.add_argument("--file-id", default=None,
                     help="Update an existing Google Slides file in place.")
     ap.add_argument("--check", action="store_true",

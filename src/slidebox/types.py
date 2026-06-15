@@ -10,6 +10,14 @@ class RGB(NamedTuple):
     g: int
     b: int
 
+    @classmethod
+    def from_hex(cls, value: str) -> RGB:
+        """Parse a ``#RRGGBB`` (or ``RRGGBB``) hex color into an RGB."""
+        s = value.lstrip("#")
+        if len(s) != 6:
+            raise ValueError(f"expected a #RRGGBB hex color, got {value!r}")
+        return cls(int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+
     def as_api(self) -> dict[str, dict[str, float]]:
         return {
             "rgbColor": {

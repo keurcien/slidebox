@@ -18,6 +18,7 @@ that factor in here and store the actual rendered sizes.)
 from __future__ import annotations
 
 import io
+import re
 import urllib.request
 from collections.abc import Callable
 from typing import Any
@@ -26,6 +27,7 @@ from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from slidebox.grid import cell_to_emu
@@ -38,8 +40,10 @@ from slidebox.schema import (
     ImageCard,
     KpiCard,
     LogoCard,
+    PanelCard,
     Slide,
     SubtitleCard,
+    TableCard,
 )
 from slidebox.theme import BrandTheme
 from slidebox.types import RGB, SLIDE_H_EMU, SLIDE_W_EMU
@@ -70,6 +74,9 @@ def _rgb(c: RGB) -> RGBColor:
 
 
 def _bbox(card: Card, grid: str) -> tuple[int, int, int, int]:
+    b = getattr(card, "bbox", None)
+    if b is not None:
+        return (b.x, b.y, b.w, b.h)
     return cell_to_emu(
         card.col_start, card.col_span, card.row_start, card.row_span, res=grid  # type: ignore[arg-type]
     )
@@ -271,6 +278,7 @@ def _text(
     align: PP_ALIGN = PP_ALIGN.LEFT,
     anchor: MSO_ANCHOR = MSO_ANCHOR.TOP,
     line_spacing: float | None = None,
+    exact_size: float | None = None,
 ) -> Any:
     box = _textbox(slide, x, y, w, h, name=name, anchor=anchor)
     p = box.text_frame.paragraphs[0]
@@ -279,15 +287,32 @@ def _text(
         p.line_spacing = line_spacing
     run = p.add_run()
     run.text = text
-    size = fitter.fit(
-        [text], w, h, size, family=font, bold=bold, italic=italic,
-        line_height=line_spacing or 1.2,
-    )
+    if exact_size is not None:
+        size = exact_size
+    else:
+        size = fitter.fit(
+            [text], w, h, size, family=font, bold=bold, italic=italic,
+            line_height=line_spacing or 1.2,
+        )
     _style_run(
         run, font=font, size=size, color=color, bold=bold, italic=italic,
         small_caps=small_caps,
     )
     return box
+
+
+_MSO_SHAPE = {
+    "rectangle": MSO_SHAPE.RECTANGLE,
+    "rounded": MSO_SHAPE.ROUNDED_RECTANGLE,
+    "ellipse": MSO_SHAPE.OVAL,
+    "triangle": MSO_SHAPE.ISOSCELES_TRIANGLE,
+}
+
+_PP_ALIGN = {
+    "left": PP_ALIGN.LEFT,
+    "center": PP_ALIGN.CENTER,
+    "right": PP_ALIGN.RIGHT,
+}
 
 
 def _rect(
@@ -302,34 +327,39 @@ def _rect(
     line_color: RGB | None = None,
     line_pt: float = 1.0,
     rounded: bool = False,
+    shape: str = "rectangle",
+    rotation: float = 0.0,
 ) -> Any:
-    shape = slide.shapes.add_shape(
-        MSO_SHAPE.ROUNDED_RECTANGLE if rounded else MSO_SHAPE.RECTANGLE,
-        Emu(x), Emu(y), Emu(w), Emu(h),
+    kind = "rounded" if (rounded and shape == "rectangle") else shape
+    obj = slide.shapes.add_shape(
+        _MSO_SHAPE[kind], Emu(x), Emu(y), Emu(w), Emu(h),
     )
-    shape.name = name
-    shape.shadow.inherit = False
+    obj.name = name
+    obj.shadow.inherit = False
+    if rotation:
+        obj.rotation = rotation
     if fill is None:
-        shape.fill.background()
+        obj.fill.background()
     else:
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = _rgb(fill)
+        obj.fill.solid()
+        obj.fill.fore_color.rgb = _rgb(fill)
     if line_color is None:
-        shape.line.fill.background()
+        obj.line.fill.background()
     else:
-        shape.line.color.rgb = _rgb(line_color)
-        shape.line.width = Pt(line_pt)
-    return shape
+        obj.line.color.rgb = _rgb(line_color)
+        obj.line.width = Pt(line_pt)
+    return obj
 
 
 # ---- per-card emitters ----------------------------------------------
 def _emit_header(c: HeaderCard, slide: Slide, theme: BrandTheme, page: Any,
                  fitter: _Fitter) -> None:
     x, y, w, h = _bbox(c, slide.grid)
+    color = RGB.from_hex(c.color) if c.color else theme.text_on(slide.background)
     _text(
         page, x, y, w, h, c.text, name=c.object_id, fitter=fitter,
         font=theme.serif_family, size=_HEADER_PT[c.size], bold=True,
-        color=theme.text_on(slide.background),
+        color=color, exact_size=c.size_pt, align=_PP_ALIGN[c.align],
     )
 
 
@@ -345,10 +375,31 @@ def _emit_subtitle(c: SubtitleCard, slide: Slide, theme: BrandTheme, page: Any,
 def _emit_eyebrow(c: EyebrowCard, slide: Slide, theme: BrandTheme, page: Any,
                   fitter: _Fitter) -> None:
     x, y, w, h = _bbox(c, slide.grid)
+    sans = c.variant == "sans"
+    color = RGB.from_hex(c.color) if c.color else theme.grey_500
     _text(
         page, x, y, w, h, c.text, name=c.object_id, fitter=fitter,
-        font=theme.serif_family, size=_EYEBROW_PT, italic=True, color=theme.grey_500,
+        font=theme.sans_family if sans else theme.serif_family,
+        size=_EYEBROW_PT, italic=not sans, color=color,
+        exact_size=c.size_pt, align=_PP_ALIGN[c.align],
     )
+
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _bold_runs(text: str) -> list[tuple[str, bool]]:
+    """Split `**emphasis**` markup into (segment, bold) runs."""
+    runs: list[tuple[str, bool]] = []
+    i = 0
+    for m in _BOLD_RE.finditer(text):
+        if m.start() > i:
+            runs.append((text[i:m.start()], False))
+        runs.append((m.group(1), True))
+        i = m.end()
+    if i < len(text):
+        runs.append((text[i:], False))
+    return runs or [(text, False)]
 
 
 def _emit_body(c: BodyCard, slide: Slide, theme: BrandTheme, page: Any,
@@ -356,15 +407,29 @@ def _emit_body(c: BodyCard, slide: Slide, theme: BrandTheme, page: Any,
     x, y, w, h = _bbox(c, slide.grid)
     box = _textbox(page, x, y, w, h, name=c.object_id)
     tf = box.text_frame
-    color = theme.text_on(slide.background)
-    size = fitter.fit(c.paragraphs, w, h, _BODY_PT, family=theme.sans_family,
-                      line_height=_BODY_LINE_HEIGHT)
+    if c.color:
+        color = RGB.from_hex(c.color)
+    elif c.tone == "muted":
+        color = theme.grey_700
+    else:
+        color = theme.text_on(slide.background)
+    # Measure with markup stripped so widths reflect the real glyphs.
+    plain = [_BOLD_RE.sub(r"\1", p) for p in c.paragraphs]
+    if c.size_pt is not None:
+        size = c.size_pt
+    else:
+        size = fitter.fit(plain, w, h, _BODY_PT, family=theme.sans_family,
+                          line_height=_BODY_LINE_HEIGHT)
+    strong = set(c.strong)
     for i, para in enumerate(c.paragraphs):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.line_spacing = _BODY_LINE_HEIGHT
-        run = p.add_run()
-        run.text = para
-        _style_run(run, font=theme.sans_family, size=size, color=color)
+        p.alignment = _PP_ALIGN[c.align]
+        for seg, seg_bold in _bold_runs(para):
+            run = p.add_run()
+            run.text = seg
+            _style_run(run, font=theme.sans_family, size=size, color=color,
+                       bold=seg_bold or i in strong)
 
 
 def _emit_kpi(c: KpiCard, slide: Slide, theme: BrandTheme, page: Any,
@@ -438,15 +503,23 @@ def _fetch_image(c: ImageCard) -> io.BytesIO | str | None:
 def _emit_image(c: ImageCard, slide: Slide, theme: BrandTheme, page: Any,
                 fitter: _Fitter) -> None:
     x, y, w, h = _bbox(c, slide.grid)
+    outline = RGB.from_hex(c.outline) if c.outline else None
     src = _fetch_image(c)
     if src is not None:
         try:
             pic = page.shapes.add_picture(src, Emu(x), Emu(y), Emu(w), Emu(h))
             pic.name = c.object_id
+            if c.rotation:
+                pic.rotation = c.rotation
+            if outline is not None:
+                pic.line.color.rgb = _rgb(outline)
+                pic.line.width = Pt(c.outline_pt)
         except Exception:
             src = None
     if src is None:
-        _rect(page, x, y, w, h, name=c.object_id, fill=theme.nude, rounded=c.rounded)
+        _rect(page, x, y, w, h, name=c.object_id, fill=theme.nude,
+              rounded=c.rounded, line_color=outline, line_pt=c.outline_pt,
+              rotation=c.rotation)
 
     if c.caption:
         _text(
@@ -454,6 +527,84 @@ def _emit_image(c: ImageCard, slide: Slide, theme: BrandTheme, page: Any,
             name=f"{c.object_id}__caption", fitter=fitter,
             font=theme.sans_family, size=_CAPTION_PT, color=theme.grey_500,
         )
+
+
+def _emit_panel(c: PanelCard, slide: Slide, theme: BrandTheme, page: Any,
+                fitter: _Fitter) -> None:
+    x, y, w, h = _bbox(c, slide.grid)
+    fill = RGB.from_hex(c.fill) if c.fill else theme.background_rgb(c.tone)
+    line = RGB.from_hex(c.outline) if c.outline else None
+    _rect(page, x, y, w, h, name=c.object_id, fill=fill, rounded=c.rounded,
+          shape=c.shape, rotation=c.rotation,
+          line_color=line, line_pt=c.outline_pt)
+
+
+def _cell_borders(tc: Any, color: RGB, pt: float) -> None:
+    """Set a uniform solid border on all four edges of a table cell."""
+    tcPr = tc._tc.get_or_add_tcPr()
+    width = str(int(pt * _EMU_PER_PT))
+    hexc = f"{color.r:02X}{color.g:02X}{color.b:02X}"
+    # Schema order: lnL, lnR, lnT, lnB come first in tcPr — insert at the
+    # front in reverse so they end up correctly ordered before any fill.
+    for tag in ("a:lnB", "a:lnT", "a:lnR", "a:lnL"):
+        for old in tcPr.findall(qn(tag)):
+            tcPr.remove(old)
+        ln = tcPr.makeelement(qn(tag),
+                              {"w": width, "cap": "flat", "cmpd": "sng", "algn": "ctr"})
+        fill = ln.makeelement(qn("a:solidFill"), {})
+        clr = fill.makeelement(qn("a:srgbClr"), {"val": hexc})
+        fill.append(clr)
+        ln.append(fill)
+        ln.append(ln.makeelement(qn("a:prstDash"), {"val": "solid"}))
+        tcPr.insert(0, ln)
+
+
+def _emit_table(c: TableCard, slide: Slide, theme: BrandTheme, page: Any,
+                fitter: _Fitter) -> None:
+    x, y, w, h = _bbox(c, slide.grid)
+    nrow, ncol = len(c.cells), len(c.cells[0])
+    gf = page.shapes.add_table(nrow, ncol, Emu(x), Emu(y), Emu(w), Emu(h))
+    gf.name = c.object_id
+    tbl = gf.table
+    # Drop the inherited table style's special formatting — we set every
+    # cell's fill and border explicitly.
+    tbl.first_row = tbl.last_row = tbl.first_col = tbl.last_col = False
+    tbl.horz_banding = tbl.vert_banding = False
+    if c.col_widths:
+        for i, cw in enumerate(c.col_widths):
+            tbl.columns[i].width = Emu(cw)
+    if c.row_heights:
+        for i, rh in enumerate(c.row_heights):
+            tbl.rows[i].height = Emu(rh)
+
+    font = c.font or theme.sans_family
+    border = RGB.from_hex(c.border) if c.border else None
+    default_color = theme.text_on(slide.background)
+    for ri, row in enumerate(c.cells):
+        for ci, cell in enumerate(row):
+            tc = tbl.cell(ri, ci)
+            tc.vertical_anchor = MSO_ANCHOR.MIDDLE
+            tc.margin_left = tc.margin_right = Pt(5)
+            tc.margin_top = tc.margin_bottom = Pt(1)
+            # A cell without an explicit fill takes the slide background, so
+            # it blends in. (Leaving it "no fill" would expose the inherited
+            # PowerPoint table style — a blue accent — on conversion.)
+            cell_fill = (RGB.from_hex(cell.fill) if cell.fill
+                         else theme.background_rgb(slide.background))
+            tc.fill.solid()
+            tc.fill.fore_color.rgb = _rgb(cell_fill)
+            color = RGB.from_hex(cell.color) if cell.color else default_color
+            size = cell.size_pt if cell.size_pt is not None else _BODY_PT
+            tf = tc.text_frame
+            tf.word_wrap = True
+            for li, line in enumerate(cell.text.split("\n")):
+                p = tf.paragraphs[0] if li == 0 else tf.add_paragraph()
+                p.alignment = _PP_ALIGN[cell.align]
+                run = p.add_run()
+                run.text = line
+                _style_run(run, font=font, size=size, color=color, bold=cell.bold)
+            if border is not None:
+                _cell_borders(tc, border, c.border_pt)
 
 
 def _emit_logo(c: LogoCard, slide: Slide, theme: BrandTheme, page: Any,
@@ -473,6 +624,8 @@ _EMITTERS: dict[str, Callable[..., None]] = {
     "kpi": _emit_kpi,
     "image": _emit_image,
     "logo": _emit_logo,
+    "panel": _emit_panel,
+    "table": _emit_table,
 }
 
 
@@ -506,7 +659,10 @@ def render(
         page = prs.slides.add_slide(blank)
         page.background.fill.solid()
         page.background.fill.fore_color.rgb = _rgb(theme.background_rgb(slide.background))
-        for card in slide.cards:
+        # Panels are background underlays: draw them first (stable order) so
+        # they sit behind the image/text placed on top.
+        ordered = sorted(slide.cards, key=lambda c: 0 if c.type == "panel" else 1)
+        for card in ordered:
             _EMITTERS[card.type](card, slide, theme, page, fitter)
 
     return prs

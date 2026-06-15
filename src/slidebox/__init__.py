@@ -37,6 +37,7 @@ from slidebox.drive import (
 from slidebox.fit import Overflow, fit_report, missing_families
 from slidebox.render import render
 from slidebox.schema import (
+    AbsoluteBox,
     Background,
     BodyCard,
     Card,
@@ -47,14 +48,18 @@ from slidebox.schema import (
     ImageCard,
     KpiCard,
     LogoCard,
+    PanelCard,
     Slide,
     SubtitleCard,
+    TableCard,
+    TableCell,
 )
 from slidebox.theme import BrandTheme
 from slidebox.types import RGB
 
 __all__ = [
     "RGB",
+    "AbsoluteBox",
     "Background",
     "BodyCard",
     "BrandTheme",
@@ -70,9 +75,12 @@ __all__ = [
     "KpiCard",
     "LogoCard",
     "Overflow",
+    "PanelCard",
     "Slide",
     "SlideBuilder",
     "SubtitleCard",
+    "TableCard",
+    "TableCell",
     "__version__",
     "card_object_id",
     "fit_report",
