@@ -24,6 +24,7 @@ dynamic = ["version"]
 dependencies = [
     "pydantic>=2.6",
     "python-pptx>=1.0",
+    "pillow>=10.0",   # real-font text measurement (measure.py / fit.py)
     "google-api-python-client>=2.100",
     "google-auth>=2.23",
     "google-auth-oauthlib>=1.1",
@@ -51,6 +52,7 @@ path = "src/slidebox/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/slidebox"]
+artifacts = ["src/slidebox/fonts/*.ttf"]  # bundled Lora/Inter/Roboto metrics
 
 [tool.ruff]
 line-length = 100

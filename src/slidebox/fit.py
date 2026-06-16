@@ -40,7 +40,6 @@ from slidebox.theme import BrandTheme
 _DEFAULT_INSET_LR = 91440
 _DEFAULT_INSET_TB = 45720
 _EMU_PER_PT = 12700
-_DEFAULT_LINE_SPACING = 1.2
 
 
 @dataclass(frozen=True)
@@ -62,9 +61,14 @@ class _Token:
 
 
 def _line_spacing(para: Any) -> float:
+    """The paragraph's line-spacing *multiplier* (1.0 == single).
+
+    The font's natural single-line height is applied separately, so an unset
+    spacing means single (1.0), not a 1.2 fudge.
+    """
     ls = para.line_spacing
     if ls is None:
-        return _DEFAULT_LINE_SPACING
+        return 1.0
     if isinstance(ls, (int, float)):
         return float(ls)
     # A Length (absolute) line spacing expressed in pt — approximated as a
@@ -72,27 +76,61 @@ def _line_spacing(para: Any) -> float:
     return 1.0
 
 
-def _wrap_lines(tokens: list[_Token], usable_w_pt: float) -> tuple[int, float]:
-    """Greedy word-wrap. Returns (line_count, widest_single_word_pt)."""
+def _natural_ratio(font: Any) -> float:
+    """Font's natural line height (ascent+descent) as a fraction of its size."""
+    ascent, descent = font.getmetrics()
+    size = max(1, getattr(font, "size", 0) or 1)
+    return float((ascent + descent) / size)
+
+
+def _wrap_lines(tokens: list[_Token], usable_w_pt: float) -> tuple[int, bool]:
+    """Greedy word-wrap, breaking over-long words at the edge as Slides does.
+
+    Returns ``(line_count, glyph_too_wide)``. ``glyph_too_wide`` is True only
+    when a single character is wider than the line (box too narrow for a glyph).
+    """
+    if not tokens:
+        return 1, False
+    space = tokens[0].font.getlength(" ")
     lines = 1
     cur = 0.0
-    space = tokens[0].font.getlength(" ") if tokens else 0.0
-    widest_word = 0.0
+    glyph_too_wide = False
     for tok in tokens:
         w = tok.font.getlength(tok.text)
-        widest_word = max(widest_word, w)
-        add = w if cur == 0 else space + w
-        if cur + add <= usable_w_pt or cur == 0:
-            cur += add
-        else:
+        if cur > 0 and cur + space + w <= usable_w_pt:
+            cur += space + w
+            continue
+        if cur > 0:  # word won't join this line — wrap to a fresh one
             lines += 1
+            cur = 0.0
+        if w <= usable_w_pt:
             cur = w
-    return lines, widest_word
+            continue
+        # Word is wider than a whole line: break it character by character.
+        for ch in tok.text:
+            cw = tok.font.getlength(ch)
+            if cur > 0 and cur + cw > usable_w_pt:
+                lines += 1
+                cur = 0.0
+            if cur == 0 and cw > usable_w_pt:
+                glyph_too_wide = True
+            cur += cw
+    return lines, glyph_too_wide
+
+
+def _merged_fonts(fonts: Fonts | None) -> Fonts:
+    """Bundled Lora/Inter/Roboto plus any caller-supplied families (override)."""
+    from slidebox.measure import bundled_fonts
+
+    merged = bundled_fonts()
+    if fonts:
+        merged.update(fonts)
+    return merged
 
 
 def fit_report(
     deck: Deck,
-    fonts: Fonts,
+    fonts: Fonts | None = None,
     *,
     theme: BrandTheme | None = None,
 ) -> list[Overflow]:
@@ -100,11 +138,23 @@ def fit_report(
 
     `fonts` maps a family name (as used by the theme, e.g. "Maison Neue") to
     either a single font-file path or a dict of variant paths with keys
-    `regular` / `bold` / `italic` / `bold_italic`.
+    `regular` / `bold` / `italic` / `bold_italic`. Lora, Inter and Roboto are
+    measured from the bundled files automatically, so `fonts` is only needed
+    for other families.
     """
-    book = _FontBook(fonts)
+    merged = _merged_fonts(fonts)
     # Render with the same fonts so we measure the renderer's actual output.
-    prs = render(deck, theme=theme, fonts=fonts)
+    prs = render(deck, theme=theme, fonts=merged)
+    return overflows(prs, merged)
+
+
+def overflows(prs: Any, fonts: Fonts | None = None) -> list[Overflow]:
+    """Report every text box in an already-rendered Presentation that overflows.
+
+    Use this when you have the `pptx.Presentation` in hand (e.g. inside
+    `save` / `to_google_slides`) and want to avoid rendering twice.
+    """
+    book = _FontBook(_merged_fonts(fonts))
     issues: list[Overflow] = []
 
     for si, slide in enumerate(prs.slides, start=1):
@@ -130,9 +180,9 @@ def fit_report(
                     continue
                 tokens: list[_Token] = []
                 max_size = 0.0
+                max_font: Any = None
                 for run in runs:
                     size_pt = run.font.size.pt if run.font.size is not None else 12.0
-                    max_size = max(max_size, size_pt)
                     fnt = book.pil_font(
                         run.font.name or "", bool(run.font.bold),
                         bool(run.font.italic), size_pt,
@@ -140,18 +190,23 @@ def fit_report(
                     if fnt is None:
                         missing_here = True
                         continue
+                    if size_pt >= max_size:
+                        max_size, max_font = size_pt, fnt
                     for word in run.text.split(" "):
                         if word:
                             tokens.append(_Token(word, fnt, size_pt))
-                if missing_here or not tokens:
+                if missing_here or not tokens or max_font is None:
                     continue
-                lines, widest_word = _wrap_lines(tokens, usable_w)
-                total_h += lines * max_size * _line_spacing(para)
-                if widest_word > usable_w:
+                lines, glyph_too_wide = _wrap_lines(tokens, usable_w)
+                # Line pitch == size x font's natural ratio x spacing multiplier,
+                # matching how Slides actually lays the paragraph out.
+                line_h = max_size * _natural_ratio(max_font) * _line_spacing(para)
+                total_h += lines * line_h
+                if glyph_too_wide:
                     issues.append(Overflow(
                         si, name, "width",
-                        f"word {widest_word:.0f}pt wide > line {usable_w:.0f}pt "
-                        "(breaks mid-word)",
+                        f"a single glyph is wider than the {usable_w:.0f}pt line "
+                        "(box too narrow for one character)",
                         para.text[:60],
                     ))
 
@@ -162,19 +217,54 @@ def fit_report(
                     tf.text[:60],
                 ))
             elif total_h > usable_h:
+                over = total_h - usable_h
                 issues.append(Overflow(
                     si, name, "height",
-                    f"text {total_h:.0f}pt tall > box {usable_h:.0f}pt",
+                    f"text {total_h:.0f}pt tall > box {usable_h:.0f}pt — grow the "
+                    f"box height by ~{over:.0f}pt or shorten the text",
                     tf.text[:60],
                 ))
 
     return issues
 
 
-def missing_families(deck: Deck, fonts: Fonts, *, theme: BrandTheme | None = None) -> set[str]:
-    """Families the deck uses for which no font file was provided."""
-    book = _FontBook(fonts)
-    prs = render(deck, theme=theme, fonts=fonts)
+def format_fit(issues: list[Overflow]) -> str:
+    """A compact, console-ready summary of a fit report."""
+    if not issues:
+        return "fit check: OK — every text box fits its container."
+    lines = [f"fit check: {len(issues)} text box(es) overflow:"]
+    for o in issues:
+        lines.append(
+            f"  slide {o.slide_index:>2}  {o.shape_name:<22} {o.kind:<7} {o.detail}"
+        )
+    return "\n".join(lines)
+
+
+def report_fit(
+    deck: Deck,
+    fonts: Fonts | None = None,
+    *,
+    theme: BrandTheme | None = None,
+    file: Any = None,
+) -> list[Overflow]:
+    """Run `fit_report` and print a console-ready summary (to stderr by default).
+
+    Returns the issues so callers can also act on them programmatically.
+    """
+    import sys
+
+    issues = fit_report(deck, fonts, theme=theme)
+    print(format_fit(issues), file=file if file is not None else sys.stderr)
+    return issues
+
+
+def missing_families(
+    deck: Deck, fonts: Fonts | None = None, *, theme: BrandTheme | None = None
+) -> set[str]:
+    """Families the deck uses for which no font file is available (incl. bundled)."""
+    merged = _merged_fonts(fonts)
+    book = _FontBook(merged)
+    prs = render(deck, theme=theme, fonts=merged)
     for slide in prs.slides:
         for shape in slide.shapes:
             if not shape.has_text_frame:
@@ -187,4 +277,12 @@ def missing_families(deck: Deck, fonts: Fonts, *, theme: BrandTheme | None = Non
     return set(book.missing)
 
 
-__all__ = ["Fonts", "Overflow", "fit_report", "missing_families"]
+__all__ = [
+    "Fonts",
+    "Overflow",
+    "fit_report",
+    "format_fit",
+    "missing_families",
+    "overflows",
+    "report_fit",
+]

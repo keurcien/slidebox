@@ -1873,6 +1873,7 @@ dependencies = [
     { name = "google-api-python-client" },
     { name = "google-auth" },
     { name = "google-auth-oauthlib" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "python-pptx" },
 ]
@@ -1896,6 +1897,7 @@ requires-dist = [
     { name = "google-auth-oauthlib", specifier = ">=1.1" },
     { name = "matplotlib", marker = "extra == 'examples'", specifier = ">=3.8" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "pillow", specifier = ">=10.0" },
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1" },

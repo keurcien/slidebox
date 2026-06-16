@@ -4,6 +4,26 @@
 
 Pre-1.0; the public API may still change.
 
+### Added (0.1.0.dev1) — compile-time fit checking
+
+- **Bundled fonts**: Lora, Inter and Roboto (regular/bold/italic/bold-italic)
+  ship with the package and are measured automatically — no font files needed.
+  `bundled_fonts()` / `BUNDLED_FAMILIES` expose them.
+- **`measure_text(...) -> FitResult`**: predict whether a string fits a
+  container *before* rendering, with actionable recommendations
+  (`recommended_min_height_emu`, `recommended_max_chars`, `recommended_size_pt`).
+- **Calibrated line-fit model** (validated against real Google Slides): line
+  height = `size × font-natural-ratio × line_spacing`; body renders at 1.6
+  spacing. Over-long words are **broken character-by-character** at the edge
+  (no horizontal spill), matching Slides. `fit_report` no longer under-counts
+  height. A small `safety_lines` reserve (default 0.1) guards the boundary.
+- **Compile-time report**: `save()` and `to_google_slides()` print a fit report
+  to stderr by default (`check=True`), naming each overflowing box and the fix.
+  New `report_fit`, `format_fit`, `overflows`; `fit_report` / `missing_families`
+  now take `fonts` optionally (bundled families resolve automatically).
+- Added `pillow` as a dependency (real-font measurement).
+- See `docs/authoring-decks.md` and `examples/calibrate_fit.py`.
+
 ### Summary
 
 slidebox builds standardised, on-brand decks from a declarative,

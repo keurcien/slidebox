@@ -68,19 +68,33 @@ def _to_buffer(prs: PptxPresentation) -> io.BytesIO:
     return buf
 
 
+def _print_fit(prs: PptxPresentation, fonts: Fonts | None) -> None:
+    """Print a fit-overflow report for an already-rendered presentation."""
+    import sys
+
+    from slidebox.fit import format_fit, overflows
+
+    print(format_fit(overflows(prs, fonts)), file=sys.stderr)
+
+
 def save(
     deck: Deck | PptxPresentation,
     path: str | Path,
     *,
     theme: BrandTheme | None = None,
     fonts: Fonts | None = None,
+    check: bool = True,
 ) -> Path:
     """Render `deck` (or pass a Presentation) and write a .pptx to `path`.
 
     Pass `fonts` (family -> file path / variant dict) to size text from real
-    font metrics; see `slidebox.render`.
+    font metrics; see `slidebox.render`. With `check=True` (default) a fit
+    report is printed to stderr so overflowing text boxes are visible at
+    compile time; pass `check=False` to silence it.
     """
     prs = _as_presentation(deck, theme, fonts)
+    if check:
+        _print_fit(prs, fonts)
     out = Path(path)
     prs.save(str(out))
     return out
@@ -95,6 +109,7 @@ def to_google_slides(
     theme: BrandTheme | None = None,
     fonts: Fonts | None = None,
     creds: CredentialsProvider | None = None,
+    check: bool = True,
 ) -> GoogleSlides:
     """Render in memory, upload to Drive, convert to Google Slides.
 
@@ -114,6 +129,8 @@ def to_google_slides(
     from googleapiclient.http import MediaIoBaseUpload
 
     prs = _as_presentation(deck, theme, fonts)
+    if check:
+        _print_fit(prs, fonts)
     title = name or (deck.title if isinstance(deck, Deck) else "Slidebox deck")
 
     provider = creds or _ADCProvider()

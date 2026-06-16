@@ -52,6 +52,11 @@ Pulls `python-pptx` (rendering) and `google-api-python-client` + `google-auth`
   `pptx.Presentation`, sizing text to fit each box. `save()` writes a
   `.pptx`; `to_google_slides()` uploads (in memory, no temp file) and
   converts to Google Slides.
+- **Fit check** — Slides doesn't shrink text to fit, so `save()` /
+  `to_google_slides()` print a fit report at compile time (`check=True`),
+  naming any text box that overflows and how to fix it. Lora, Inter and
+  Roboto ship bundled and are measured automatically; `measure_text()`
+  predicts fit before rendering. See **[docs/authoring-decks.md](docs/authoring-decks.md)**.
 - **Charts** — embed matplotlib (or any) figures as images via
   `image(source_url=…)`. See `examples/kpi_report.py`.
 
