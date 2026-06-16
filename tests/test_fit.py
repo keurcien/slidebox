@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from slidebox import Deck, fit_report, missing_families
-from slidebox.fit import Overflow
+from slidebox import BrandTheme, Deck, fit_report, missing_families, report_fit
+from slidebox.fit import Overflow, format_fit
 
 _TTF_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -72,3 +72,42 @@ def test_height_overflow_is_detected() -> None:
 def test_overflow_is_a_dataclass_with_location() -> None:
     o = Overflow(2, "hero", "height", "too tall", "Hello")
     assert (o.slide_index, o.shape_name, o.kind) == (2, "hero", "height")
+
+
+# --- bundled-default fit check (no font files needed: Lora/Inter/Roboto ship) --
+
+_LORA_INTER = BrandTheme(serif_family="Lora", sans_family="Inter")
+
+
+def _overflowing_deck() -> Deck:
+    return (
+        Deck.new(title="t", object_id="t")
+        .slide(bg="white", object_id="s")
+        .header("A fine title.", size_pt=20, col=1, row=1, span=(10, 2),
+                object_id="ok_title")
+        .body(["A very long paragraph that cannot possibly fit a one-cell box "
+               "no matter how we slice it, so it must overflow. " * 2],
+              size_pt=18, col=1, row=4, span=(2, 1), object_id="too_long")
+        .build()
+    )
+
+
+def test_fit_report_uses_bundled_fonts_without_font_files() -> None:
+    # No `fonts=` argument: Lora/Inter are measured from the bundled TTFs.
+    issues = fit_report(_overflowing_deck(), theme=_LORA_INTER)
+    assert any(o.kind == "height" and o.shape_name == "too_long" for o in issues)
+    assert not any(o.kind == "missing-font" for o in issues)
+
+
+def test_format_fit_is_actionable_and_names_the_shape() -> None:
+    assert "OK" in format_fit([])
+    issues = fit_report(_overflowing_deck(), theme=_LORA_INTER)
+    text = format_fit(issues)
+    assert "too_long" in text and "shorten" in text
+
+
+def test_report_fit_prints_and_returns(capsys: pytest.CaptureFixture[str]) -> None:
+    issues = report_fit(_overflowing_deck(), theme=_LORA_INTER)
+    err = capsys.readouterr().err
+    assert "overflow" in err and "too_long" in err
+    assert issues  # also returned for programmatic use

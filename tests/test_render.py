@@ -78,7 +78,7 @@ def test_custom_theme_sets_background() -> None:
 
 def test_absolute_panel_renders_at_exact_emu() -> None:
     from slidebox import AbsoluteBox
-    from slidebox.schema import PanelCard, Slide
+    from slidebox.schema import PanelCard
 
     deck = Deck.new(title="T", object_id="t")
     sb = deck.slide(bg="white", object_id="s")
@@ -160,7 +160,7 @@ def test_image_outline_on_placeholder() -> None:
 
 def test_table_renders_native_with_styling() -> None:
     from slidebox import TableCell
-    from slidebox.schema import Slide, TableCard
+    from slidebox.schema import TableCard
 
     cells = [
         [TableCell(text="H", bold=True, fill="#F9F0E0", color="#5F6365"),
@@ -186,6 +186,7 @@ def test_table_renders_native_with_styling() -> None:
 
 def test_table_rejects_ragged_rows() -> None:
     import pytest
+
     from slidebox import TableCell
     from slidebox.schema import TableCard
     with pytest.raises(Exception):

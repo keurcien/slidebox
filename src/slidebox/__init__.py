@@ -34,7 +34,20 @@ from slidebox.drive import (
     save,
     to_google_slides,
 )
-from slidebox.fit import Overflow, fit_report, missing_families
+from slidebox.fit import (
+    Overflow,
+    fit_report,
+    format_fit,
+    missing_families,
+    overflows,
+    report_fit,
+)
+from slidebox.measure import (
+    BUNDLED_FAMILIES,
+    FitResult,
+    bundled_fonts,
+    measure_text,
+)
 from slidebox.render import render
 from slidebox.schema import (
     AbsoluteBox,
@@ -58,6 +71,7 @@ from slidebox.theme import BrandTheme
 from slidebox.types import RGB
 
 __all__ = [
+    "BUNDLED_FAMILIES",
     "RGB",
     "AbsoluteBox",
     "Background",
@@ -69,6 +83,7 @@ __all__ = [
     "Deck",
     "DeckBuilder",
     "EyebrowCard",
+    "FitResult",
     "GoogleSlides",
     "HeaderCard",
     "ImageCard",
@@ -82,10 +97,15 @@ __all__ = [
     "TableCard",
     "TableCell",
     "__version__",
+    "bundled_fonts",
     "card_object_id",
     "fit_report",
+    "format_fit",
+    "measure_text",
     "missing_families",
+    "overflows",
     "render",
+    "report_fit",
     "save",
     "slide_object_id",
     "to_google_slides",
