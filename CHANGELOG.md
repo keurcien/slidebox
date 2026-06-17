@@ -4,7 +4,7 @@
 
 Pre-1.0; the public API may still change.
 
-### Added — API ergonomics
+### Added (0.1.0.dev2) — API ergonomics
 
 - **`creds=` accepts a raw `google.auth` `Credentials`** directly (the object
   `google.auth.default()` returns), in addition to a `CredentialsProvider` or
