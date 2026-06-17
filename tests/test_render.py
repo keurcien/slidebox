@@ -184,6 +184,81 @@ def test_table_renders_native_with_styling() -> None:
     assert t.cell(0, 0).fill.fore_color.rgb == RGBColor(0xF9, 0xF0, 0xE0)
 
 
+def test_body_line_spacing_override_is_applied() -> None:
+    deck = (
+        Deck.new(title="T", object_id="t")
+        .slide(object_id="s")
+        .body("★ ★ ★ ★ ★", col=1, row=1, span=(4, 1), line_spacing=1.0, object_id="r")
+    ).build()
+    shape = {s.name: s for s in render(deck).slides[0].shapes}["r"]
+    assert shape.text_frame.paragraphs[0].line_spacing == 1.0
+
+
+def test_body_default_line_spacing_is_loose() -> None:
+    deck = (
+        Deck.new(title="T", object_id="t")
+        .slide(object_id="s")
+        .body("Some paragraph copy.", col=1, row=1, span=(6, 2), object_id="b")
+    ).build()
+    shape = {s.name: s for s in render(deck).slides[0].shapes}["b"]
+    assert shape.text_frame.paragraphs[0].line_spacing == 1.6
+
+
+def test_image_crop_contain_centers_and_preserves_ratio() -> None:
+    import io
+
+    from PIL import Image
+
+    # A wide 4:1 image placed in a square box. "contain" should shrink it to
+    # fit the width and center it vertically inside the box.
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 100), (10, 20, 30)).save(buf, format="PNG")
+    buf.seek(0)
+    tmp = io.BytesIO(buf.getvalue())
+
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        f.write(tmp.getvalue())
+        path = f.name
+
+    box = 2_000_000
+    deck = (
+        Deck.new(title="T", object_id="t")
+        .slide(object_id="s")
+        .image(path=path, crop="contain", x=0, y=0, w=box, h=box, object_id="img")
+    ).build()
+    pic = {s.name: s for s in render(deck).slides[0].shapes}["img"]
+    # 4:1 image in a square box -> displayed height is a quarter of the width.
+    assert pic.width == box
+    assert pic.height == box // 4
+    # Centered vertically.
+    assert pic.top == (box - pic.height) // 2
+
+
+def test_image_crop_cover_fills_box_exactly() -> None:
+    import io
+    import tempfile
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 100), (10, 20, 30)).save(buf, format="PNG")
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+        f.write(buf.getvalue())
+        path = f.name
+
+    box = 2_000_000
+    deck = (
+        Deck.new(title="T", object_id="t")
+        .slide(object_id="s")
+        .image(path=path, crop="cover", x=0, y=0, w=box, h=box, object_id="img")
+    ).build()
+    pic = {s.name: s for s in render(deck).slides[0].shapes}["img"]
+    # cover fills the whole box exactly (the image is center-cropped to fit).
+    assert (pic.left, pic.top, pic.width, pic.height) == (0, 0, box, box)
+
+
 def test_table_rejects_ragged_rows() -> None:
     import pytest
 

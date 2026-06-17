@@ -53,6 +53,39 @@ class Overflow:
     text: str  # excerpt of the offending text
 
 
+class SlideboxFitError(Exception):
+    """Raised when a deck has overflowing text and the caller asked to be strict.
+
+    Carries the offending :class:`Overflow` items on ``.issues`` so a CI step
+    can inspect them.
+    """
+
+    def __init__(self, issues: list[Overflow]) -> None:
+        self.issues = list(issues)
+        super().__init__(format_fit(self.issues))
+
+
+class FitReport(list):  # type: ignore[type-arg]
+    """A ``list[Overflow]`` with convenience accessors.
+
+    Backwards compatible with the old plain-list return type (it *is* a list),
+    plus:
+
+    - ``report.ok`` — True when nothing overflows.
+    - ``report.raise_if_overflow()`` — raise :class:`SlideboxFitError` if any
+      box overflows (handy in CI).
+    """
+
+    @property
+    def ok(self) -> bool:
+        return len(self) == 0
+
+    def raise_if_overflow(self) -> FitReport:
+        if self:
+            raise SlideboxFitError(list(self))
+        return self
+
+
 @dataclass
 class _Token:
     text: str
@@ -133,7 +166,7 @@ def fit_report(
     fonts: Fonts | None = None,
     *,
     theme: BrandTheme | None = None,
-) -> list[Overflow]:
+) -> FitReport:
     """Render `deck` and report every text box that doesn't fit its box.
 
     `fonts` maps a family name (as used by the theme, e.g. "Maison Neue") to
@@ -148,14 +181,14 @@ def fit_report(
     return overflows(prs, merged)
 
 
-def overflows(prs: Any, fonts: Fonts | None = None) -> list[Overflow]:
+def overflows(prs: Any, fonts: Fonts | None = None) -> FitReport:
     """Report every text box in an already-rendered Presentation that overflows.
 
     Use this when you have the `pptx.Presentation` in hand (e.g. inside
     `save` / `to_google_slides`) and want to avoid rendering twice.
     """
     book = _FontBook(_merged_fonts(fonts))
-    issues: list[Overflow] = []
+    issues: FitReport = FitReport()
 
     for si, slide in enumerate(prs.slides, start=1):
         for shape in slide.shapes:
@@ -246,10 +279,11 @@ def report_fit(
     *,
     theme: BrandTheme | None = None,
     file: Any = None,
-) -> list[Overflow]:
+) -> FitReport:
     """Run `fit_report` and print a console-ready summary (to stderr by default).
 
-    Returns the issues so callers can also act on them programmatically.
+    Returns the issues (a :class:`FitReport`) so callers can also act on them
+    programmatically — e.g. ``report_fit(deck).raise_if_overflow()`` in CI.
     """
     import sys
 
@@ -278,8 +312,10 @@ def missing_families(
 
 
 __all__ = [
+    "FitReport",
     "Fonts",
     "Overflow",
+    "SlideboxFitError",
     "fit_report",
     "format_fit",
     "missing_families",

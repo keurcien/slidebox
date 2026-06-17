@@ -123,6 +123,11 @@ class BodyCard(_CardBase):
     tone: Literal["default", "muted"] = "default"
     # Exact point size override (skips auto-fit). See HeaderCard.size_pt.
     size_pt: float | None = Field(default=None, gt=0)
+    # Line-spacing multiplier (1.0 == single). Body copy defaults to a loose
+    # 1.6 for readable paragraphs; override to a tighter value for decorative
+    # single-line copy (e.g. a "★ ★ ★ ★ ★" rating) so it doesn't inflate the
+    # box height. Used for both rendering and fit measurement.
+    line_spacing: float | None = Field(default=None, gt=0)
     # Indices of paragraphs to render fully bold (e.g. [1] = the second).
     # Mid-paragraph emphasis is also supported via **double asterisks**.
     strong: list[int] = Field(default_factory=list)
@@ -164,6 +169,12 @@ class ImageCard(_CardBase):
     placeholder_tone: str | None = None
     rounded: bool = False
     caption: str | None = None
+    # How the image is fit to its box (like CSS `object-fit`):
+    #   None      — stretch to fill the box exactly (may distort) [default]
+    #   "cover"   — center-crop to the box's aspect ratio, filling it
+    #   "contain" — scale to fit inside the box, centered (letterboxed)
+    # "cover" and "contain" preserve the image's aspect ratio.
+    crop: Literal["cover", "contain"] | None = None
     # Optional "#RRGGBB" frame around the picture (e.g. a white photo border).
     outline: str | None = Field(default=None, pattern=_HEX)
     outline_pt: float = Field(default=1.0, gt=0)

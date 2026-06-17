@@ -43,6 +43,30 @@ class _ADCProvider:
         return creds
 
 
+def _resolve_credentials(creds: Any) -> Any:
+    """Turn whatever the caller passed for `creds` into a Credentials object.
+
+    Accepts, in order:
+    - ``None`` — use Application Default Credentials.
+    - a raw ``google.auth.credentials.Credentials`` (what ``google.auth.default()``
+      returns) — used directly. Detected structurally (it exposes ``token`` and
+      ``refresh``), so no wrapper class is needed.
+    - a :class:`CredentialsProvider` — its ``.credentials()`` is called.
+    """
+    if creds is None:
+        return _ADCProvider().credentials()
+    # A google.auth Credentials object: has a `token` attribute and a
+    # `refresh` method. Use it directly so callers can pass the result of
+    # `google.auth.default()` without a wrapper.
+    if hasattr(creds, "token") and callable(getattr(creds, "refresh", None)):
+        return creds
+    if hasattr(creds, "credentials") and callable(creds.credentials):
+        return creds.credentials()
+    raise TypeError(
+        "creds must be a google.auth Credentials, a CredentialsProvider, or None"
+    )
+
+
 @dataclass(frozen=True)
 class GoogleSlides:
     """Result of an upload: the Drive file id and its editor URL."""
@@ -68,13 +92,26 @@ def _to_buffer(prs: PptxPresentation) -> io.BytesIO:
     return buf
 
 
-def _print_fit(prs: PptxPresentation, fonts: Fonts | None) -> None:
-    """Print a fit-overflow report for an already-rendered presentation."""
+def _check_fit(
+    prs: PptxPresentation, fonts: Fonts | None, *, check: bool, strict: bool
+) -> None:
+    """Report (and optionally enforce) text fit for an already-rendered deck.
+
+    With `check`, prints the report to stderr. With `strict`, raises
+    :class:`slidebox.fit.SlideboxFitError` if any box overflows. `strict`
+    implies a check is run even if `check` is False.
+    """
     import sys
 
+    if not check and not strict:
+        return
     from slidebox.fit import format_fit, overflows
 
-    print(format_fit(overflows(prs, fonts)), file=sys.stderr)
+    issues = overflows(prs, fonts)
+    if check:
+        print(format_fit(issues), file=sys.stderr)
+    if strict:
+        issues.raise_if_overflow()
 
 
 def save(
@@ -84,17 +121,19 @@ def save(
     theme: BrandTheme | None = None,
     fonts: Fonts | None = None,
     check: bool = True,
+    strict: bool = False,
 ) -> Path:
     """Render `deck` (or pass a Presentation) and write a .pptx to `path`.
 
     Pass `fonts` (family -> file path / variant dict) to size text from real
     font metrics; see `slidebox.render`. With `check=True` (default) a fit
     report is printed to stderr so overflowing text boxes are visible at
-    compile time; pass `check=False` to silence it.
+    compile time; pass `check=False` to silence it. With `strict=True` a
+    :class:`slidebox.fit.SlideboxFitError` is raised (before writing) if any
+    text box overflows — useful in CI to fail on a broken deck.
     """
     prs = _as_presentation(deck, theme, fonts)
-    if check:
-        _print_fit(prs, fonts)
+    _check_fit(prs, fonts, check=check, strict=strict)
     out = Path(path)
     prs.save(str(out))
     return out
@@ -108,8 +147,9 @@ def to_google_slides(
     folder_id: str | None = None,
     theme: BrandTheme | None = None,
     fonts: Fonts | None = None,
-    creds: CredentialsProvider | None = None,
+    creds: Any | None = None,
     check: bool = True,
+    strict: bool = False,
 ) -> GoogleSlides:
     """Render in memory, upload to Drive, convert to Google Slides.
 
@@ -124,17 +164,22 @@ def to_google_slides(
     calls are already enabled (`supportsAllDrives=True`).
 
     Pass `fonts` to size text from real font metrics (see `slidebox.render`).
+
+    `creds` accepts a raw ``google.auth.credentials.Credentials`` (e.g. the
+    object returned by ``google.auth.default()``), a :class:`CredentialsProvider`,
+    or ``None`` for Application Default Credentials — no wrapper class needed.
+
+    With `strict=True` a :class:`slidebox.fit.SlideboxFitError` is raised
+    (before uploading) if any text box overflows.
     """
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseUpload
 
     prs = _as_presentation(deck, theme, fonts)
-    if check:
-        _print_fit(prs, fonts)
+    _check_fit(prs, fonts, check=check, strict=strict)
     title = name or (deck.title if isinstance(deck, Deck) else "Slidebox deck")
 
-    provider = creds or _ADCProvider()
-    drive = build("drive", "v3", credentials=provider.credentials())
+    drive = build("drive", "v3", credentials=_resolve_credentials(creds))
     media = MediaIoBaseUpload(_to_buffer(prs), mimetype=PPTX_MIME, resumable=True)
 
     if file_id:

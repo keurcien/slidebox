@@ -54,11 +54,16 @@ Pulls `python-pptx` (rendering) and `google-api-python-client` + `google-auth`
   converts to Google Slides.
 - **Fit check** — Slides doesn't shrink text to fit, so `save()` /
   `to_google_slides()` print a fit report at compile time (`check=True`),
-  naming any text box that overflows and how to fix it. Lora, Inter and
-  Roboto ship bundled and are measured automatically; `measure_text()`
-  predicts fit before rendering. See **[docs/authoring-decks.md](docs/authoring-decks.md)**.
-- **Charts** — embed matplotlib (or any) figures as images via
-  `image(source_url=…)`. See `examples/kpi_report.py`.
+  naming any text box that overflows and how to fix it. Pass `strict=True`
+  to raise `SlideboxFitError` instead (handy in CI), or call
+  `fit_report(deck).raise_if_overflow()`. Lora, Inter and Roboto ship
+  bundled and are measured automatically; `measure_text()` (or the builder's
+  `min_height(...)`) predicts fit before rendering. See
+  **[docs/authoring-decks.md](docs/authoring-decks.md)**.
+- **Images** — embed matplotlib (or any) figures and photos via
+  `image(path=…)` (local), `image(url=…)` (remote), or `drive_file_id=…`.
+  `crop="cover"` center-crops to the box ratio, `crop="contain"` letterboxes.
+  See `examples/kpi_report.py`.
 
 The runnable example is **`examples/kpi_report.py`** — a 6-slide weekly
 report with KPI cards and matplotlib charts on fake data.
@@ -72,7 +77,17 @@ gcloud auth application-default login \
     --scopes=https://www.googleapis.com/auth/drive
 ```
 
-A `CredentialsProvider` protocol lets an OAuth web app supply a token.
+To use your own credentials, pass `creds=` — it accepts a raw
+`google.auth.credentials.Credentials` directly (no wrapper needed):
+
+```python
+import google.auth
+creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/drive"])
+to_google_slides(deck, creds=creds)
+```
+
+A `CredentialsProvider` protocol (an object with a `.credentials()` method)
+also works, e.g. for an OAuth web app that supplies a token.
 
 ## Why slidebox
 

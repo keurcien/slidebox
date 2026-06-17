@@ -413,17 +413,18 @@ def _emit_body(c: BodyCard, slide: Slide, theme: BrandTheme, page: Any,
         color = theme.grey_700
     else:
         color = theme.text_on(slide.background)
+    line_height = c.line_spacing if c.line_spacing is not None else _BODY_LINE_HEIGHT
     # Measure with markup stripped so widths reflect the real glyphs.
     plain = [_BOLD_RE.sub(r"\1", p) for p in c.paragraphs]
     if c.size_pt is not None:
         size = c.size_pt
     else:
         size = fitter.fit(plain, w, h, _BODY_PT, family=theme.sans_family,
-                          line_height=_BODY_LINE_HEIGHT)
+                          line_height=line_height)
     strong = set(c.strong)
     for i, para in enumerate(c.paragraphs):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.line_spacing = _BODY_LINE_HEIGHT
+        p.line_spacing = line_height
         p.alignment = _PP_ALIGN[c.align]
         for seg, seg_bold in _bold_runs(para):
             run = p.add_run()
@@ -500,14 +501,81 @@ def _fetch_image(c: ImageCard) -> io.BytesIO | str | None:
     return None  # drive_file_id needs auth — handled as placeholder in v1
 
 
+def _crop_cover(src: io.BytesIO | str, w: int, h: int) -> io.BytesIO | str:
+    """Center-crop `src` to the box's aspect ratio (CSS `object-fit: cover`).
+
+    Returns a PNG/JPEG buffer of the cropped image; on any failure (unreadable
+    image, missing codec) returns `src` unchanged so the box still fills.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(src)
+        iw, ih = img.size
+        if iw <= 0 or ih <= 0 or h <= 0:
+            return src
+        target = w / h
+        ratio = iw / ih
+        if ratio > target:  # image too wide — trim left/right
+            new_w = max(1, round(ih * target))
+            x0 = (iw - new_w) // 2
+            box = (x0, 0, x0 + new_w, ih)
+        else:  # image too tall — trim top/bottom
+            new_h = max(1, round(iw / target))
+            y0 = (ih - new_h) // 2
+            box = (0, y0, iw, y0 + new_h)
+        cropped = img.crop(box)
+        fmt = (img.format or "PNG").upper()
+        if fmt in ("JPEG", "JPG") and cropped.mode not in ("RGB", "L"):
+            cropped = cropped.convert("RGB")
+        buf = io.BytesIO()
+        cropped.save(buf, format=fmt)
+        buf.seek(0)
+        return buf
+    except Exception:
+        if hasattr(src, "seek"):
+            src.seek(0)
+        return src
+
+
+def _contain_box(src: io.BytesIO | str, x: int, y: int, w: int, h: int
+                 ) -> tuple[int, int, int, int]:
+    """Largest box preserving the image's aspect ratio, centered in (x,y,w,h).
+
+    For CSS `object-fit: contain`. Returns the original box on any failure.
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(src)
+        iw, ih = img.size
+        if hasattr(src, "seek"):
+            src.seek(0)
+        if iw <= 0 or ih <= 0:
+            return x, y, w, h
+        scale = min(w / iw, h / ih)
+        dw = max(1, round(iw * scale))
+        dh = max(1, round(ih * scale))
+        return x + (w - dw) // 2, y + (h - dh) // 2, dw, dh
+    except Exception:
+        if hasattr(src, "seek"):
+            src.seek(0)
+        return x, y, w, h
+
+
 def _emit_image(c: ImageCard, slide: Slide, theme: BrandTheme, page: Any,
                 fitter: _Fitter) -> None:
     x, y, w, h = _bbox(c, slide.grid)
     outline = RGB.from_hex(c.outline) if c.outline else None
     src = _fetch_image(c)
     if src is not None:
+        px, py, pw, ph = x, y, w, h
+        if c.crop == "cover":
+            src = _crop_cover(src, w, h)
+        elif c.crop == "contain":
+            px, py, pw, ph = _contain_box(src, x, y, w, h)
         try:
-            pic = page.shapes.add_picture(src, Emu(x), Emu(y), Emu(w), Emu(h))
+            pic = page.shapes.add_picture(src, Emu(px), Emu(py), Emu(pw), Emu(ph))
             pic.name = c.object_id
             if c.rotation:
                 pic.rotation = c.rotation
