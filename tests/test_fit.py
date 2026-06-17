@@ -111,3 +111,20 @@ def test_report_fit_prints_and_returns(capsys: pytest.CaptureFixture[str]) -> No
     err = capsys.readouterr().err
     assert "overflow" in err and "too_long" in err
     assert issues  # also returned for programmatic use
+
+
+def test_fit_report_is_a_fitreport_with_ok_and_raise() -> None:
+    from slidebox import FitReport, SlideboxFitError
+
+    bad = fit_report(_overflowing_deck(), theme=_LORA_INTER)
+    assert isinstance(bad, FitReport)
+    assert bad.ok is False
+    with pytest.raises(SlideboxFitError) as ei:
+        bad.raise_if_overflow()
+    assert ei.value.issues  # carries the offending overflows
+
+    clean = _deck(lambda sb: sb.header("A quiet quarter.", size_pt=20,
+                                       col=1, row=1, span=(10, 2)))
+    ok = fit_report(clean, theme=_LORA_INTER)
+    assert ok.ok is True
+    assert ok.raise_if_overflow() is ok  # no raise, returns self

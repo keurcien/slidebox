@@ -4,6 +4,28 @@
 
 Pre-1.0; the public API may still change.
 
+### Added (0.1.0.dev2) — API ergonomics
+
+- **`creds=` accepts a raw `google.auth` `Credentials`** directly (the object
+  `google.auth.default()` returns), in addition to a `CredentialsProvider` or
+  `None` (ADC). No wrapper class needed.
+- **Image `crop`**: `image(crop="cover")` center-crops to the box's aspect
+  ratio, `crop="contain"` letterboxes it inside, default (`None`) stretches.
+- **Strict fit checking**: `save(..., strict=True)` and
+  `to_google_slides(..., strict=True)` raise `SlideboxFitError` on overflow
+  (before writing/uploading). `fit_report`/`report_fit`/`overflows` now return
+  a `FitReport` with `.ok` and `.raise_if_overflow()`.
+- **Per-card body `line_spacing`**: `body(..., line_spacing=1.0)` overrides the
+  default 1.6 — for decorative single-line copy (e.g. a star rating) that
+  shouldn't inflate the box.
+- **`SlideBuilder.min_height(...)`**: compute the minimum box height (EMU) for
+  text at a given size/width, using the right font + line-spacing for the card.
+- **Hybrid placement**: cards accept grid args *and* absolute `x/y/w/h`
+  together; each absolute coordinate overrides that axis of the grid cell.
+- **Image source aliases**: `image(path=…)` / `image(url=…)` / `image(src=…)`
+  read clearer than `source_url=…` (still supported).
+- `body(...)` documented to accept a bare string for a single paragraph.
+
 ### Added (0.1.0.dev1) — compile-time fit checking
 
 - **Bundled fonts**: Lora, Inter and Roboto (regular/bold/italic/bold-italic)

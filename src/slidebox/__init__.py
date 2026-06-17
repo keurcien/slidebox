@@ -35,7 +35,9 @@ from slidebox.drive import (
     to_google_slides,
 )
 from slidebox.fit import (
+    FitReport,
     Overflow,
+    SlideboxFitError,
     fit_report,
     format_fit,
     missing_families,
@@ -83,6 +85,7 @@ __all__ = [
     "Deck",
     "DeckBuilder",
     "EyebrowCard",
+    "FitReport",
     "FitResult",
     "GoogleSlides",
     "HeaderCard",
@@ -93,6 +96,7 @@ __all__ = [
     "PanelCard",
     "Slide",
     "SlideBuilder",
+    "SlideboxFitError",
     "SubtitleCard",
     "TableCard",
     "TableCell",

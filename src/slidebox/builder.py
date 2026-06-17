@@ -8,7 +8,9 @@ required `col`, `row`, `span` (=cells, rows) and an optional
 
 from __future__ import annotations
 
-from slidebox.grid import GridRes
+from typing import Any
+
+from slidebox.grid import GridRes, cell_to_emu
 from slidebox.schema import (
     AbsoluteBox,
     Background,
@@ -42,13 +44,52 @@ def _placement(
     y: int | None,
     w: int | None,
     h: int | None,
+    grid: GridRes = "fine",
 ) -> dict:
-    """Return card-constructor kwargs for grid *or* absolute placement.
+    """Return card-constructor kwargs for grid, absolute, or hybrid placement.
 
-    Pass grid args (col, row, span) or absolute EMU (x, y, w, h) — not both.
+    Three modes:
+    - **Grid**: pass `col`, `row`, `span` only.
+    - **Absolute**: pass all of `x`, `y`, `w`, `h` (EMU) only.
+    - **Hybrid**: pass grid args *and* one or more of `x/y/w/h`. The grid cell
+      is resolved to EMU on `grid`, then each supplied absolute coordinate
+      overrides the corresponding grid value. Returns a pure `bbox`. Useful to
+      place on the grid horizontally and fine-tune vertically (or vice versa),
+      e.g. `header(col=7, span=(5, 1), y=100000)`.
     """
     abs_args = (x, y, w, h)
-    if any(v is not None for v in abs_args):
+    has_abs = any(v is not None for v in abs_args)
+    any_grid = col is not None or row is not None or span is not None
+
+    if any_grid and has_abs:
+        # Hybrid: resolve each of x/y/w/h from the absolute value if given,
+        # else from the grid. The grid x needs `col`, w/h need `span`'s spans,
+        # and y needs `row` — require whichever the absolute side doesn't cover.
+        cs, rs = _normalize_span(span) if span is not None else (None, None)
+        gx, gy, gw, gh = cell_to_emu(
+            col if col is not None else 1, cs if cs is not None else 1,
+            row if row is not None else 1, rs if rs is not None else 1,
+            res=grid,
+        )
+
+        def pick(abs_v: int | None, grid_v: int, have_grid: bool, name: str) -> int:
+            if abs_v is not None:
+                return abs_v
+            if not have_grid:
+                raise ValueError(
+                    f"hybrid placement: {name} needs an absolute value or its grid arg"
+                )
+            return grid_v
+
+        return {
+            "bbox": AbsoluteBox(
+                x=pick(x, gx, col is not None, "x (col)"),
+                y=pick(y, gy, row is not None, "y (row)"),
+                w=pick(w, gw, cs is not None, "w (span)"),
+                h=pick(h, gh, rs is not None, "h (span)"),
+            )
+        }
+    if has_abs:
         if any(v is None for v in abs_args):
             raise ValueError("absolute placement needs all of x, y, w, h")
         return {"bbox": AbsoluteBox(x=x, y=y, w=w, h=h)}
@@ -121,7 +162,7 @@ class SlideBuilder:
                 size_pt=size_pt,
                 color=color,
                 align=align,
-                **_placement(col, row, span, x, y, w, h),
+                **_placement(col, row, span, x, y, w, h, self._slide.grid),
             )
         )
 
@@ -171,7 +212,7 @@ class SlideBuilder:
                 size_pt=size_pt,
                 color=color,
                 align=align,
-                **_placement(col, row, span, x, y, w, h),
+                **_placement(col, row, span, x, y, w, h, self._slide.grid),
             )
         )
 
@@ -188,6 +229,7 @@ class SlideBuilder:
         h: int | None = None,
         tone: str = "default",
         size_pt: float | None = None,
+        line_spacing: float | None = None,
         strong: list[int] | None = None,
         color: str | None = None,
         align: str = "left",
@@ -201,10 +243,11 @@ class SlideBuilder:
                 paragraphs=paragraphs,
                 tone=tone,
                 size_pt=size_pt,
+                line_spacing=line_spacing,
                 strong=strong or [],
                 color=color,
                 align=align,
-                **_placement(col, row, span, x, y, w, h),
+                **_placement(col, row, span, x, y, w, h, self._slide.grid),
             )
         )
 
@@ -250,27 +293,46 @@ class SlideBuilder:
         w: int | None = None,
         h: int | None = None,
         source_url: str | None = None,
+        path: str | None = None,
+        url: str | None = None,
+        src: str | None = None,
         drive_file_id: str | None = None,
         placeholder_tone: str | None = None,
         rounded: bool = False,
+        crop: str | None = None,
         caption: str | None = None,
         outline: str | None = None,
         outline_pt: float = 1.0,
         rotation: float = 0.0,
         object_id: str | None = None,
     ) -> SlideBuilder:
+        """An image, placed on the grid or by absolute EMU.
+
+        The source is one of: `path`/`src` (a local file), `url` (a remote
+        http(s) image), `source_url` (either — kept for back-compat), or
+        `drive_file_id` (an existing Drive file). Pass exactly one.
+
+        `crop` controls how the image fills its box (like CSS `object-fit`):
+        `"cover"` center-crops to the box ratio, `"contain"` letterboxes it
+        inside, and the default (`None`) stretches it to fill exactly.
+        """
+        sources = [s for s in (source_url, path, url, src) if s is not None]
+        if len(sources) > 1:
+            raise ValueError("pass only one of source_url / path / url / src")
+        resolved = sources[0] if sources else None
         return self._add(
             ImageCard(
                 object_id=self._next_id("image", object_id),
-                source_url=source_url,
+                source_url=resolved,
                 drive_file_id=drive_file_id,
                 placeholder_tone=placeholder_tone,
                 rounded=rounded,
+                crop=crop,
                 caption=caption,
                 outline=outline,
                 outline_pt=outline_pt,
                 rotation=rotation,
-                **_placement(col, row, span, x, y, w, h),
+                **_placement(col, row, span, x, y, w, h, self._slide.grid),
             )
         )
 
@@ -308,7 +370,7 @@ class SlideBuilder:
                 object_id=self._next_id("panel", object_id),
                 shape=shape, tone=tone, fill=fill, rounded=rounded,
                 outline=outline, outline_pt=outline_pt, rotation=rotation,
-                **_placement(col, row, span, x, y, w, h),
+                **_placement(col, row, span, x, y, w, h, self._slide.grid),
             )
         )
 
@@ -346,7 +408,7 @@ class SlideBuilder:
                 font=font,
                 border=border,
                 border_pt=border_pt,
-                **_placement(col, row, span, x, y, w, h),
+                **_placement(col, row, span, x, y, w, h, self._slide.grid),
             )
         )
 
@@ -372,6 +434,58 @@ class SlideBuilder:
                 size=size,
             )
         )
+
+    def min_height(
+        self,
+        text: str | list[str],
+        *,
+        card: str = "body",
+        size_pt: float,
+        width_emu: int,
+        theme: Any = None,
+        family: str | None = None,
+        line_spacing: float | None = None,
+        fonts: Any = None,
+        safety_lines: float = 0.1,
+    ) -> int:
+        """Minimum box height (EMU) needed to hold `text` at `size_pt`.
+
+        Computes the height with the same font metrics and line-spacing the
+        named `card` renders at, so the result can be passed straight to a
+        card's `h=`. `card` is "body" (sans family, 1.6 spacing), "header"
+        (serif, 1.0), "subtitle"/"eyebrow" (sans/serif, 1.0). Pass `family`
+        and/or `line_spacing` to override, and `theme`/`fonts` to measure a
+        non-bundled family (else Lora/Inter/Roboto are measured for free).
+
+            h = b.min_height("Mon texte…", card="body", size_pt=10,
+                             width_emu=3_000_000)
+            b.body("Mon texte…", x=…, y=…, w=3_000_000, h=h, size_pt=10)
+        """
+        from slidebox.measure import (
+            SLIDES_BODY_LINE_SPACING,
+            SLIDES_DEFAULT_LINE_SPACING,
+            measure_text,
+        )
+        from slidebox.theme import BrandTheme
+
+        theme = theme or BrandTheme()
+        serif = card == "header" or (card == "eyebrow")
+        fam = family or (theme.serif_family if serif else theme.sans_family)
+        if line_spacing is None:
+            line_spacing = (
+                SLIDES_BODY_LINE_SPACING if card == "body"
+                else SLIDES_DEFAULT_LINE_SPACING
+            )
+        # Measure against an effectively unbounded box and read back the height
+        # the wrapped text actually needs.
+        huge = 10 ** 9
+        r = measure_text(
+            text, family=fam, size_pt=size_pt, width_emu=width_emu,
+            height_emu=huge, line_spacing=line_spacing, fonts=fonts,
+            bold=(card == "header"), italic=(card == "eyebrow"),
+            safety_lines=safety_lines,
+        )
+        return r.recommended_min_height_emu
 
     def build(self) -> Deck:
         return self._deck.build()
